@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>07 HyDE 检索 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html" class="active">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">07</span>
+            <h1>HyDE 检索</h1>
+            <p class="page-desc">Hypothetical Document Embeddings — 用"假答案"提升检索精度</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 问题背景：语义鸿沟</h2>
+                <p>用户问题和文档之间存在<strong>语义鸿沟（Semantic Gap）</strong>：用户用"问句"提问，而文档用"陈述句"写内容。这两种表述在向量空间中的距离可能很远。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>语义鸿沟示意</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">用户问题（问句）："公主最后嫁给了谁？"</div>
+                            <div class="flow-arrow">↓ 向量空间中距离远</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">文档内容（陈述）："沈令月于永和五年下嫁谢初，举国同庆。"</div>
+                        </div>
+                    </div>
+                </div>
+                <p>HyDE 的核心洞察：<strong>用"答案"检索"答案"，比用"问题"检索"答案"更有效。</strong></p>
+            </section>
+
+            <section>
+                <h2>💡 核心思路</h2>
+                <p>HyDE（Hypothetical Document Embeddings）的流程：先让 LLM 生成一个"假答案"（假设性文档），然后用这个假答案去检索真实文档。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>HyDE 检索流程</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">用户问题："公主最后嫁给了谁？"</div>
+                            <div class="flow-arrow">↓ Step 1: LLM 生成假答案</div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">假答案："根据小说情节，沈令月公主最终嫁给了谢初。谢初在长林盛宴中表现出色，获得皇帝赏识，后被选为驸马。"</div>
+                            <div class="flow-arrow">↓ Step 2: 对假答案做 Embedding</div>
+                            <div class="flow-step">假答案向量：[0.12, -0.34, 0.56, ...]</div>
+                            <div class="flow-arrow">↓ Step 3: 用假答案向量检索</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">匹配到真实文档："沈令月于永和五年下嫁谢初..."<br><small>假答案和真实文档都是陈述句，语义更接近！</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🤔 为什么有效？</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>向量空间中的距离对比</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">❌ 问句 → 陈述句<br><small>"公主嫁给了谁？" → "沈令月下嫁谢初"<br>距离远，语义类型不同</small></div>
+                            <div class="flow-arrow">对比</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">✅ 陈述句 → 陈述句<br><small>"公主嫁给了谢初..." → "沈令月下嫁谢初"<br>距离近，语义类型相同</small></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tips">
+                    <div class="tip"><strong>关键原理</strong>：Embedding 模型在训练时，问题和答案的分布是不同的。HyDE 通过生成假答案，把"问题空间"映射到"答案空间"，消除了语义鸿沟。</div>
+                    <div class="tip"><strong>假答案不需要正确</strong>：即使 LLM 生成的假答案是错的，只要它的"表述风格"和真实文档相似，就能提升检索效果。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <pre><code>from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+# 1. 定义 HyDE Prompt
+hyde_prompt = ChatPromptTemplate.from_template("""
+请根据用户的问题，生成一段假设性的答案。
+这段答案应该像真实文档一样，用陈述句详细描述相关信息。
+不需要保证答案正确，但格式和风格应该像真实文档。
+
+用户问题：{question}
+
+假设性答案：
+""")
+
+# 2. 构建 HyDE 链
+hyde_chain = hyde_prompt | llm | StrOutputParser()
+
+# 3. HyDE 检索函数
+def hyde_retrieve(question, retriever):
+    # 生成假答案
+    hypothetical_answer = hyde_chain.invoke({"question": question})
+    print(f"假答案: {hypothetical_answer}")
+
+    # 用假答案检索
+    docs = retriever.invoke(hypothetical_answer)
+    return docs
+
+# 4. 使用
+docs = hyde_retrieve("公主最后嫁给了谁？", vectorstore.as_retriever())</code></pre>
+            </section>
+
+            <section>
+                <h2>📊 效果对比</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>普通检索</th><th>HyDE 检索</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>检索方式</strong></td><td>问题向量 → 检索文档</td><td>问题 → 假答案 → 假答案向量 → 检索文档</td></tr>
+                        <tr><td><strong>语义匹配</strong></td><td>问句 vs 陈述句（鸿沟大）</td><td>陈述句 vs 陈述句（鸿沟小）</td></tr>
+                        <tr><td><strong>检索精度</strong></td><td>一般</td><td>更高（尤其对复杂问题）</td></tr>
+                        <tr><td><strong>额外延迟</strong></td><td>无</td><td>+1 次 LLM 调用（~500ms）</td></tr>
+                        <tr><td><strong>额外成本</strong></td><td>无</td><td>+1 次 LLM 调用</td></tr>
+                        <tr><td><strong>适用场景</strong></td><td>简单直接的问题</td><td>复杂问题、语义鸿沟大的场景</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🎯 适用场景</h2>
+                <div class="tips">
+                    <div class="tip"><strong>复杂问题</strong> — 问题涉及多个概念、需要推理，直接检索效果差</div>
+                    <div class="tip"><strong>语义鸿沟大</strong> — 用户问题和文档表述风格差异大（如口语 vs 专业术语）</div>
+                    <div class="tip"><strong>跨语言检索</strong> — 用 LLM 生成目标语言的假答案，提升跨语言匹配</div>
+                    <div class="tip"><strong>不适合的场景</strong> — 简单事实性问题（如"作者是谁"）、对延迟极度敏感的场景</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🔗 HyDE vs 多路检索</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>多路检索（Multi-Query）</th><th>HyDE</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>核心思路</strong></td><td>1 个问题 → N 个检索词</td><td>1 个问题 → 1 个假答案</td></tr>
+                        <tr><td><strong>解决什么问题</strong></td><td>问题模糊、表述单一</td><td>语义鸿沟（问句 vs 陈述句）</td></tr>
+                        <tr><td><strong>检索次数</strong></td><td>N 次</td><td>1 次</td></tr>
+                        <tr><td><strong>LLM 调用</strong></td><td>1 次（改写）</td><td>1 次（生成假答案）</td></tr>
+                        <tr><td><strong>可以组合</strong></td><td colspan="2">✅ 先用 HyDE 生成假答案，再对假答案做多路检索</td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="06_多路检索.html" class="prev">← 上一页</a>
+            <a href="08_混合检索.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

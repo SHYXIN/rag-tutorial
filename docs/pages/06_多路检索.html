@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>06 多路检索 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html" class="active">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">06</span>
+            <h1>多路检索</h1>
+            <p class="page-desc">Multi-Query Retrieval — 1 个问题变 N 个检索词，提升召回率</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 问题背景</h2>
+                <p>用户提问往往是<strong>模糊的</strong>、<strong>口语化的</strong>，和文档中的表述方式差异很大。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>问题示例</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">用户问："那个公主后来咋样了？"<br><small>模糊、口语、指代不明</small></div>
+                            <div class="flow-arrow">↓ 直接检索</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">文档写："沈令月于永和三年册封为嫡公主..."<br><small>语义差距大，可能检索不到</small></div>
+                        </div>
+                    </div>
+                </div>
+                <p>单路检索只用用户原始问题去搜索，容易因为<strong>表述差异</strong>而遗漏相关文档。</p>
+            </section>
+
+            <section>
+                <h2>💡 核心思路</h2>
+                <p>多路检索的核心思想：<strong>用 LLM 将 1 个问题改写成 3-5 个不同角度的检索词，分别检索后合并去重。</strong></p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>多路检索流程</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">用户原始问题："那个公主后来咋样了？"</div>
+                            <div class="flow-arrow">↓ LLM 改写</div>
+                            <div class="flow" style="flex-direction:column; gap:6px; width:100%; max-width:450px;">
+                                <div class="flow-step" style="background:#ebf5fb;">Query 1: "沈令月的结局是什么？"</div>
+                                <div class="flow-step" style="background:#ebf5fb;">Query 2: "公主沈令月的后续经历"</div>
+                                <div class="flow-step" style="background:#ebf5fb;">Query 3: "沈令月最终命运如何？"</div>
+                            </div>
+                            <div class="flow-arrow">↓ 分别检索向量数据库</div>
+                            <div class="flow" style="flex-direction:column; gap:6px; width:100%; max-width:450px;">
+                                <div class="flow-step" style="background:#fef9e7;">结果 1: [doc_A, doc_C, doc_E]</div>
+                                <div class="flow-step" style="background:#fef9e7;">结果 2: [doc_B, doc_C, doc_F]</div>
+                                <div class="flow-step" style="background:#fef9e7;">结果 3: [doc_A, doc_D, doc_G]</div>
+                            </div>
+                            <div class="flow-arrow">↓ 合并去重</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">最终结果: [doc_A, doc_B, doc_C, doc_D, doc_E, doc_F, doc_G]<br><small>7 个唯一文档，比单路检索多出 3 个</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <h3>方案一：QueryRewriter + 手动合并</h3>
+                <pre><code>from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
+# 1. 定义 Query 改写 Prompt
+rewrite_prompt = ChatPromptTemplate.from_template("""
+你是一个检索优化助手。请将用户的问题改写成 {n} 个不同角度的检索查询。
+每个查询应该从不同角度表达相同的意图，以提高检索召回率。
+
+用户问题：{question}
+
+请输出 {n} 个查询，每行一个：
+""")
+
+# 2. 构建改写链
+n_queries = 3
+rewriter = rewrite_prompt | llm | StrOutputParser()
+
+# 3. 执行多路检索
+def multi_query_retrieve(question, retriever, n=3):
+    # 改写查询
+    rewritten = rewriter.invoke({"question": question, "n": n})
+    queries = [q.strip() for q in rewritten.strip().split("\n") if q.strip()]
+    queries.append(question)  # 保留原始问题
+
+    # 分别检索 + 合并去重
+    all_docs = []
+    seen_ids = set()
+    for q in queries:
+        docs = retriever.invoke(q)
+        for doc in docs:
+            if doc.id not in seen_ids:
+                seen_ids.add(doc.id)
+                all_docs.append(doc)
+    return all_docs</code></pre>
+
+                <h3>方案二：LangChain MultiQueryRetriever（推荐）</h3>
+                <pre><code>from langchain.retrievers.multi_query import MultiQueryRetriever
+
+# 一行代码搞定
+retriever = MultiQueryRetriever.from_llm(
+    retriever=vectorstore.as_retriever(search_kwargs={"k": 5}),
+    llm=llm,
+    prompt=rewrite_prompt  # 可选：自定义改写 Prompt
+)
+
+# 使用方式与普通 retriever 完全一致
+docs = retriever.invoke("那个公主后来咋样了？")</code></pre>
+            </section>
+
+            <section>
+                <h2>📊 效果对比</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>单路检索</th><th>多路检索</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>检索次数</strong></td><td>1 次</td><td>3-5 次</td></tr>
+                        <tr><td><strong>召回文档数</strong></td><td>3-5 个</td><td>10-20 个（去重后）</td></tr>
+                        <tr><td><strong>召回率</strong></td><td>一般</td><td>显著提升</td></tr>
+                        <tr><td><strong>延迟</strong></td><td>低（~200ms）</td><td>较高（~600ms-1s）</td></tr>
+                        <tr><td><strong>LLM 调用</strong></td><td>0 次（仅生成答案）</td><td>1 次（改写）+ 1 次（生成）</td></tr>
+                        <tr><td><strong>适用场景</strong></td><td>问题明确、表述规范</td><td>问题模糊、口语化</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🎯 适用场景</h2>
+                <div class="tips">
+                    <div class="tip"><strong>用户问题模糊</strong> — 如"那个东西怎么用"、"后来怎么了"等口语化表达</div>
+                    <div class="tip"><strong>需要高召回率</strong> — 如法律检索、医疗问答，不能遗漏关键信息</div>
+                    <div class="tip"><strong>文档表述多样</strong> — 同一概念在不同文档中有不同说法</div>
+                    <div class="tip"><strong>不适合的场景</strong> — 问题已经很精确（如"第 3 章第 5 节的内容"）、对延迟敏感的场景</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="05_微调vsRAG.html" class="prev">← 上一页</a>
+            <a href="07_HyDE检索.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

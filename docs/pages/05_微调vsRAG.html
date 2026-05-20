@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 微调 vs RAG — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html" class="active">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">05</span>
+            <h1>微调 vs RAG</h1>
+            <p class="page-desc">两种增强 LLM 能力的方案，如何选择？</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 核心区别</h2>
+                <p>微调（Fine-tuning）和 RAG 都是让 LLM 获得额外知识/能力的方式，但机制完全不同。</p>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>微调（Fine-tuning）</th><th>RAG</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>知识存储</strong></td><td>模型权重内部（参数化记忆）</td><td>外部知识库（非参数化）</td></tr>
+                        <tr><td><strong>知识更新</strong></td><td>需要重新训练，成本高</td><td>更新知识库即可，成本低</td></tr>
+                        <tr><td><strong>答案可追溯</strong></td><td>❌ 无法知道答案来源</td><td>✅ 可追溯到具体文档</td></tr>
+                        <tr><td><strong>成本</strong></td><td>高（GPU 训练，数据标注）</td><td>低（检索 + API 调用）</td></tr>
+                        <tr><td><strong>幻觉风险</strong></td><td>可能（模型可能记住错误知识）</td><td>较低（有文档依据）</td></tr>
+                        <tr><td><strong>适用场景</strong></td><td>改变模型行为/风格/格式</td><td>提供领域知识/实时信息</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🧑‍💼 形象比喻</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>微调 = 培训员工</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdebd0; border-color:#f0b27a;">你花几个月培训一个员工<br><small>让他掌握专业知识</small></div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step" style="background:#fdebd0; border-color:#f0b27a;">他记住了这些知识<br><small>但无法告诉你"这是从哪学来的"</small></div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step" style="background:#fdebd0; border-color:#f0b27a;">知识更新需要重新培训<br><small>耗时耗力</small></div>
+                        </div>
+                    </div>
+                    <div class="diagram-box">
+                        <h4>RAG = 百科全书</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">你给员工一本百科全书<br><small>他不需要记住所有内容</small></div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">遇到问题时查阅相关章节<br><small>可以告诉你"这是第几页写的"</small></div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">知识更新只需换本书<br><small>简单快捷</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🔍 什么时候用微调？</h2>
+                <div class="tips">
+                    <div class="tip"><strong>需要改变输出风格</strong> — 让模型用特定语气、格式或风格回复（如客服话术、品牌调性）</div>
+                    <div class="tip"><strong>需要遵循特定格式</strong> — 生成固定结构的 JSON、SQL、代码等</div>
+                    <div class="tip"><strong>需要学习特定推理模式</strong> — 如法律推理、医学诊断逻辑</div>
+                    <div class="tip"><strong>离线环境</strong> — 无法联网，不能依赖外部知识库</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🔍 什么时候用 RAG？</h2>
+                <div class="tips">
+                    <div class="tip"><strong>知识需要频繁更新</strong> — 如新闻、产品信息、政策法规</div>
+                    <div class="tip"><strong>需要答案可追溯</strong> — 如法律咨询、医疗建议、学术研究</div>
+                    <div class="tip"><strong>领域知识丰富</strong> — 如企业内部文档、技术手册、小说知识库</div>
+                    <div class="tip"><strong>预算有限</strong> — 不想投入大量 GPU 训练成本</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🔗 两者结合</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>微调 + RAG 组合方案</h4>
+                        <div class="flow">
+                            <div class="flow-step" style="background:#fdebd0; border-color:#f0b27a;">微调<br><small>优化模型行为<br>风格/格式/推理</small></div>
+                            <div class="flow-arrow">+</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">RAG<br><small>提供领域知识<br>实时信息</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6b1;">最佳效果<br><small>既专业又准确<br>还可追溯</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🔧 LoRA 轻量级微调原理</h2>
+                <p>全量微调需要更新模型所有参数（如 70 亿个），成本极高。LoRA（Low-Rank Adaptation）通过<strong>低秩矩阵分解</strong>大幅减少训练参数。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>LoRA 原理</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">原始权重矩阵 W（1024×1024 = 1,048,576 参数）</div>
+                            <div class="flow-arrow">↓ 冻结不动</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">新增两个小矩阵：A（1024×8）+ B（8×1024）<br><small>只需训练 16,384 参数，减少 98.4%</small></div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step">推理时：W' = W + A × B<br><small>效果接近全量微调，成本大幅降低</small></div>
+                        </div>
+                    </div>
+                </div>
+                <pre><code># LoRA 微调示例（使用 Hugging Face PEFT）
+from peft import LoraConfig, get_peft_model
+
+lora_config = LoraConfig(
+    r=8,                # 秩（rank），越小参数越少
+    lora_alpha=32,      # 缩放因子
+    target_modules=["q_proj", "v_proj"],  # 只微调注意力层的 Q 和 V
+    lora_dropout=0.05,
+    bias="none"
+)
+
+model = get_peft_model(base_model, lora_config)
+# 可训练参数从 7B → 约 4M（减少 99.9%）</code></pre>
+                <div class="tips">
+                    <div class="tip"><strong>LoRA 优势</strong>：训练成本极低（单卡 GPU 即可）、可切换不同 LoRA 适配器应对不同任务、不改变原始模型。</div>
+                    <div class="tip"><strong>适用场景</strong>：数据量不大（几百到几千条）、需要快速迭代、资源有限。</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="04_向量数据库.html" class="prev">← 上一页</a>
+            <a href="06_多路检索.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

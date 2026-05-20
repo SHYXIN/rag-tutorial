@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>13 Self-RAG — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html" class="active">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">13</span>
+            <h1>Self-RAG（自我反思的检索增强生成）</h1>
+            <p class="page-desc">让 LLM 自己决定何时检索、检索是否相关、回答是否有据</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 问题背景：普通 RAG 的三个痛点</h2>
+                <p>传统 RAG 的流程是"无脑检索"——不管问题需不需要检索，都先去知识库搜一把。这会带来三个问题：</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>普通 RAG 的三大痛点</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">
+                                <strong>① 过度检索（Over-Retrieval）</strong><br>
+                                <small>用户问"你好"，系统也去检索 → 浪费资源，还可能引入无关信息干扰回答</small>
+                            </div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                <strong>② 检索不够（Under-Retrieval）</strong><br>
+                                <small>一次检索结果不够，但系统不知道 → 基于不完整信息回答，可能遗漏关键事实</small>
+                            </div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                <strong>③ 幻觉（Hallucination）</strong><br>
+                                <small>检索到的文档和问题无关，但 LLM 仍然基于无关文档生成回答 → 产生错误信息</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <table class="comparison-table">
+                    <thead><tr><th>痛点</th><th>场景</th><th>后果</th></tr></thead>
+                    <tbody>
+                        <tr><td>过度检索</td><td>闲聊、通用知识问题</td><td>增加延迟和成本，引入噪音</td></tr>
+                        <tr><td>检索不够</td><td>复杂问题需要多角度信息</td><td>回答不完整，遗漏关键信息</td></tr>
+                        <tr><td>幻觉</td><td>检索结果与问题无关</td><td>LLM 基于无关文档编造答案</td></tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>核心洞察</strong>：普通 RAG 的问题在于"检索"和"生成"之间没有反馈。Self-RAG 让 LLM 在每一步都能自我反思，决定下一步该怎么做。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💡 核心思路：LLM 自我反思</h2>
+                <p>Self-RAG 的核心思想是：<strong>让 LLM 在生成过程中输出特殊的"反思 Token"，根据这些 Token 决定是否需要检索、检索结果是否相关、回答是否有文档支持。</strong></p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>Self-RAG vs 普通 RAG</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">
+                                <strong>普通 RAG</strong>：问题 → 检索 → 拼接 → 生成（一条路走到黑）
+                            </div>
+                            <div class="flow-arrow">🆚</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">
+                                <strong>Self-RAG</strong>：问题 → <strong>要不要检索？</strong> → 检索 → <strong>结果相关吗？</strong> → 生成 → <strong>回答有据吗？</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🔑 三种反思 Token</h2>
+                <p>Self-RAG 定义了三类反思 Token，让 LLM 在生成过程中输出：</p>
+                <table class="comparison-table">
+                    <thead><tr><th>反思类型</th><th>Token</th><th>作用</th><th>触发时机</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td rowspan="2"><strong>检索决策</strong></td>
+                            <td><code>[Retrieve]</code></td>
+                            <td>需要检索</td>
+                            <td>问题需要外部知识</td>
+                        </tr>
+                        <tr>
+                            <td><code>[No Retrieve]</code></td>
+                            <td>不需要检索</td>
+                            <td>问题可直接回答</td>
+                        </tr>
+                        <tr>
+                            <td rowspan="2"><strong>相关性判断</strong></td>
+                            <td><code>[Is Relevant]</code></td>
+                            <td>检索结果与问题相关</td>
+                            <td>检索完成后</td>
+                        </tr>
+                        <tr>
+                            <td><code>[Not Relevant]</code></td>
+                            <td>检索结果与问题无关</td>
+                            <td>检索完成后</td>
+                        </tr>
+                        <tr>
+                            <td rowspan="2"><strong>支持度判断</strong></td>
+                            <td><code>[Is Supported]</code></td>
+                            <td>回答有文档支持</td>
+                            <td>生成回答后</td>
+                        </tr>
+                        <tr>
+                            <td><code>[Not Supported]</code></td>
+                            <td>回答无文档支持</td>
+                            <td>生成回答后</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>反思 Token 决策树</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">用户问题</div>
+                            <div class="flow-arrow">↓ LLM 输出反思 Token</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                [Retrieve] → 执行检索 → 获取文档<br>
+                                [No Retrieve] → 直接生成回答
+                            </div>
+                            <div class="flow-arrow">↓ 如果检索了，LLM 判断相关性</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">
+                                [Is Relevant] → 基于文档生成回答<br>
+                                [Not Relevant] → 重新检索 或 直接生成
+                            </div>
+                            <div class="flow-arrow">↓ 生成回答后，LLM 判断支持度</div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                [Is Supported] → 输出最终回答<br>
+                                [Not Supported] → 重新生成 或 标注"信息不足"
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🔄 完整流程图</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>Self-RAG 完整执行流程</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">用户问题："谢初的官职是什么？"</div>
+                            <div class="flow-arrow">↓ 步骤 1：检索决策</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                LLM 输出：<code>[Retrieve]</code>，因为问题涉及具体事实，需要检索
+                            </div>
+                            <div class="flow-arrow">↓ 步骤 2：执行检索</div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                检索结果 D1："谢初在长林盛宴中拔得头筹，被皇帝封为太傅。"<br>
+                                检索结果 D2："谢初出身寒门，凭借才华一步步晋升至太傅之位。"
+                            </div>
+                            <div class="flow-arrow">↓ 步骤 3：相关性判断</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">
+                                D1 → <code>[Is Relevant]</code>（直接回答了官职）<br>
+                                D2 → <code>[Is Relevant]</code>（提到了太傅，但侧重晋升过程）
+                            </div>
+                            <div class="flow-arrow">↓ 步骤 4：自适应生成</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                LLM 基于 D1 和 D2 生成回答："谢初官至太傅，他出身寒门，凭借才华一步步晋升。"
+                            </div>
+                            <div class="flow-arrow">↓ 步骤 5：支持度判断</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">
+                                <code>[Is Supported]</code>："太傅"在 D1 中有明确支持，"寒门晋升"在 D2 中有明确支持<br>
+                                → 输出最终回答
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <pre><code>class SelfRAG:
+    """自我反思的检索增强生成"""
+
+    def __init__(self, llm, retriever, max_retrievals=3):
+        self.llm = llm
+        self.retriever = retriever
+        self.max_retrievals = max_retrievals
+
+    def should_retrieve(self, question: str) -> bool:
+        """步骤 1：判断是否需要检索"""
+        prompt = f"""判断以下问题是否需要从知识库中检索信息才能准确回答。
+如果需要检索，输出 [Retrieve]；如果不需要，输出 [No Retrieve]。
+
+问题：{question}
+
+判断："""
+        response = self.llm.invoke(prompt).content.strip()
+        return "[Retrieve]" in response
+
+    def is_relevant(self, question: str, document: str) -> bool:
+        """步骤 2：判断检索结果是否相关"""
+        prompt = f"""判断以下文档是否与问题相关。
+如果相关，输出 [Is Relevant]；如果不相关，输出 [Not Relevant]。
+
+问题：{question}
+文档：{document}
+
+判断："""
+        response = self.llm.invoke(prompt).content.strip()
+        return "[Is Relevant]" in response
+
+    def is_supported(self, answer: str, documents: list[str]) -> bool:
+        """步骤 3：判断回答是否有文档支持"""
+        context = "\n".join(f"文档{i+1}：{d}" for i, d in enumerate(documents))
+        prompt = f"""判断以下回答是否有文档中的事实支持。
+如果有支持，输出 [Is Supported]；如果无支持，输出 [Not Supported]。
+
+{context}
+
+回答：{answer}
+
+判断："""
+        response = self.llm.invoke(prompt).content.strip()
+        return "[Is Supported]" in response
+
+    def generate(self, question: str, documents: list[str]) -> str:
+        """基于文档生成回答"""
+        if not documents:
+            return self.llm.invoke(question).content
+        context = "\n".join(f"文档{i+1}：{d}" for i, d in enumerate(documents))
+        prompt = f"""根据以下文档回答问题。如果文档不足以回答，请说明。
+
+{context}
+
+问题：{question}
+回答："""
+        return self.llm.invoke(prompt).content
+
+    def ask(self, question: str) -> dict:
+        """完整的 Self-RAG 流程"""
+        result = {"question": question, "retrieved": [], "answer": ""}
+
+        # 步骤 1：是否需要检索？
+        if not self.should_retrieve(question):
+            result["answer"] = self.llm.invoke(question).content
+            result["skipped_retrieval"] = True
+            return result
+
+        # 步骤 2：检索 + 相关性过滤
+        documents = []
+        for _ in range(self.max_retrievals):
+            docs = self.retriever.invoke(question)
+            for doc in docs:
+                content = doc.page_content
+                if self.is_relevant(question, content):
+                    documents.append(content)
+            if documents:
+                break  # 找到相关文档就停止
+
+        result["retrieved"] = documents
+
+        # 步骤 3：生成回答
+        answer = self.generate(question, documents)
+        result["answer"] = answer
+
+        # 步骤 4：支持度检查
+        if documents and not self.is_supported(answer, documents):
+            result["answer"] = "抱歉，知识库中没有足够信息回答这个问题。"
+            result["unsupported"] = True
+
+        return result
+
+
+# 使用
+self_rag = SelfRAG(llm, retriever)
+result = self_rag.ask("谢初的官职是什么？")
+print(f"回答：{result['answer']}")
+print(f"检索了 {len(result['retrieved'])} 篇文档")</code></pre>
+            </section>
+
+            <section>
+                <h2>📊 效果对比：Self-RAG vs 普通 RAG</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>场景</th><th>普通 RAG</th><th>Self-RAG</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td>用户问"你好"</td>
+                            <td>检索 3 篇无关文档 → 浪费</td>
+                            <td>[No Retrieve] → 直接回复"你好！"</td>
+                        </tr>
+                        <tr>
+                            <td>用户问"谢初的官职"</td>
+                            <td>检索 → 返回结果（无论是否相关）</td>
+                            <td>[Retrieve] → 检索 → [Is Relevant] → 生成</td>
+                        </tr>
+                        <tr>
+                            <td>检索结果全部无关</td>
+                            <td>基于无关文档编造答案（幻觉）</td>
+                            <td>[Not Relevant] → 重新检索或拒绝回答</td>
+                        </tr>
+                        <tr>
+                            <td>回答超出文档范围</td>
+                            <td>无法检测，直接输出</td>
+                            <td>[Not Supported] → 标注"信息不足"</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>幻觉率对比（论文数据）</h4>
+                        <div class="flow">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">普通 RAG<br><small>幻觉率 ~30-40%</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">Self-RAG<br><small>幻觉率 ~10-15%</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🎯 适用场景</h2>
+                <div class="tips">
+                    <div class="tip"><strong>高精度要求</strong> — 医疗、法律、金融等领域，幻觉代价高，Self-RAG 的支持度检查能有效降低风险</div>
+                    <div class="tip"><strong>混合查询</strong> — 用户问题有的需要检索、有的不需要，Self-RAG 能自适应判断</div>
+                    <div class="tip"><strong>知识库质量不稳定</strong> — 检索结果可能包含无关文档，Self-RAG 的相关性过滤能自动排除噪音</div>
+                    <div class="tip"><strong>不适合的场景</strong> — 对延迟要求极高（如实时聊天），Self-RAG 的多轮反思会增加 2-4 倍的 LLM 调用</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>⚖️ 代价：延迟与成本增加</h2>
+                <p>Self-RAG 不是免费的午餐。每次问答可能需要多次 LLM 调用：</p>
+                <table class="comparison-table">
+                    <thead><tr><th>调用步骤</th><th>普通 RAG</th><th>Self-RAG</th></tr></thead>
+                    <tbody>
+                        <tr><td>检索决策</td><td>0 次</td><td>1 次</td></tr>
+                        <tr><td>相关性判断</td><td>0 次</td><td>1-N 次（每篇文档一次）</td></tr>
+                        <tr><td>生成回答</td><td>1 次</td><td>1 次</td></tr>
+                        <tr><td>支持度检查</td><td>0 次</td><td>1 次</td></tr>
+                        <tr><td><strong>总计</strong></td><td><strong>1 次</strong></td><td><strong>3-5 次</strong></td></tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>优化策略 1</strong>：相关性判断可以用轻量级分类器替代 LLM，减少延迟和成本</div>
+                    <div class="tip"><strong>优化策略 2</strong>：支持度检查可以只对"不确定"的回答执行，先用一个置信度阈值过滤</div>
+                    <div class="tip"><strong>优化策略 3</strong>：批量处理相关性判断——把所有文档拼在一起，一次 LLM 调用判断所有文档的相关性</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="12_RAG路由.html" class="prev">← 上一页</a>
+            <span class="prev disabled">下一页（已是最后一页）</span>
+        </div>
+    </div>
+</body>
+</html>

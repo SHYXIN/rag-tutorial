@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>02 Embedding 与向量化 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html" class="active">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">02</span>
+            <h1>Embedding 与向量化</h1>
+            <p class="page-desc">文本转向量、双塔架构、相似度计算、ONNX 本地运行</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 什么是 Embedding？</h2>
+                <p><strong>Embedding 是把文本转换成一串数字（向量）的过程。</strong></p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <div class="flow">
+                            <div class="flow-step">"沈令月是公主"</div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">[0.12, -0.34, 0.56, ..., 0.78]<br><small>512 维向量</small></div>
+                        </div>
+                    </div>
+                </div>
+                <p>这串数字的妙处在：<strong>语义相似的文本，它们的向量在空间里距离也近。</strong></p>
+            </section>
+
+            <section>
+                <h2>📐 双塔架构 vs 交叉编码器</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>双塔（Embedding 模型）</th><th>交叉编码器（Rerank 模型）</th></tr></thead>
+                    <tbody>
+                        <tr><td>输入</td><td>问题和文档分别编码</td><td>问题和文档一起输入</td></tr>
+                        <tr><td>输出</td><td>两个独立向量</td><td>一个相关性分数</td></tr>
+                        <tr><td>速度</td><td>快（可预计算）</td><td>慢（每次都要算）</td></tr>
+                        <tr><td>精度</td><td>一般</td><td>高</td></tr>
+                        <tr><td>用途</td><td>大规模初筛</td><td>小规模精排</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🔢 相似度计算</h2>
+                <p>最常用的是<strong>余弦相似度</strong>：</p>
+                <pre><code>cosine_similarity(A, B) = Σ(Ai × Bi) / (√Σ(Ai²) × √Σ(Bi²))
+
+# 示例
+vec1 = embed("沈令月是公主")
+vec2 = embed("沈令月是嫡女")
+vec3 = embed("今天天气很好")
+
+cosine(vec1, vec2) = 0.95  # 高度相似
+cosine(vec1, vec3) = 0.12  # 几乎无关</code></pre>
+            </section>
+
+            <section>
+                <h2>💻 本地运行 Embedding（ONNX）</h2>
+                <pre><code>import onnxruntime as ort
+from tokenizers import Tokenizer
+import numpy as np
+
+class LocalBGEEmbedding:
+    def __init__(self, model_dir):
+        self.tokenizer = Tokenizer.from_file(f"{model_dir}/tokenizer.json")
+        self.session = ort.InferenceSession(f"{model_dir}/model_optimized.onnx")
+
+    def embed(self, text):
+        # 1. Tokenize
+        encoded = self.tokenizer.encode(text)
+        input_ids = np.array([encoded.ids], dtype=np.int64)
+        attention_mask = np.array([encoded.attention_mask], dtype=np.int64)
+        token_type_ids = np.array([encoded.type_ids], dtype=np.int64)
+
+        # 2. ONNX 推理
+        outputs = self.session.run(None, {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": token_type_ids
+        })
+
+        # 3. Mean pooling + L2 归一化
+        last_hidden = outputs[0]
+        mask = np.expand_dims(attention_mask, -1)
+        embeddings = np.sum(last_hidden * mask, axis=1) / np.sum(mask, axis=1)
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        return (embeddings / norms).tolist()[0]</code></pre>
+            </section>
+
+            <section>
+                <h2>📊 常见 Embedding 模型</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>模型</th><th>语言</th><th>维度</th><th>特点</th></tr></thead>
+                    <tbody>
+                        <tr><td>text-embedding-3-small</td><td>多语言</td><td>1536</td><td>OpenAI，效果好但需要 API</td></tr>
+                        <tr><td>BAAI/bge-small-zh-v1.5</td><td>中文</td><td>512</td><td>中文效果好，可本地运行</td></tr>
+                        <tr><td>BAAI/bge-m3</td><td>多语言</td><td>1024</td><td>支持多语言，效果优秀</td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="01_RAG基础概念.html" class="prev">← 上一页</a>
+            <a href="03_文档切块.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

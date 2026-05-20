@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10 RAG 评估 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html" class="active">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">10</span>
+            <h1>RAG 评估（Evaluation）</h1>
+            <p class="page-desc">系统化评估 RAG 系统的质量，找到优化方向</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 为什么需要评估？</h2>
+                <p>RAG 系统是一个多组件 pipeline，任何一个环节出问题都会影响最终效果。<strong>没有评估，优化就是盲人摸象。</strong></p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>RAG 系统的故障链</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">切块策略不当 → 语义被切断</div>
+                            <div class="flow-arrow">↓ 连锁反应</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">Embedding 质量差 → 检索结果不相关</div>
+                            <div class="flow-arrow">↓ 连锁反应</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">检索结果不相关 → LLM 无法生成好答案</div>
+                            <div class="flow-arrow">↓ 连锁反应</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">LLM 生成答案质量差 → 用户体验差</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tips">
+                    <div class="tip"><strong>评估的核心价值</strong>：定位问题出在哪个环节——是检索没找到相关文档？还是 LLM 没有正确使用文档？还是文档本身质量差？</div>
+                    <div class="tip"><strong>没有评估的后果</strong>：你优化了 Prompt，但问题其实出在切块策略上；你换了 Embedding 模型，但问题其实出在检索参数上。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📐 四个评估维度</h2>
+                <p>RAG 评估需要从四个维度全面衡量，每个维度对应 pipeline 的不同环节：</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>四维评估框架</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                <strong>① 检索相关性（Retrieval Relevance）</strong><br>
+                                <small>检索到的文档是否与问题相关？——评估检索环节</small>
+                            </div>
+                            <div class="flow-arrow">↓ 检索结果作为上下文</div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                <strong>② 答案忠实度（Answer Faithfulness）</strong><br>
+                                <small>答案是否基于检索到的文档，而非模型编造？——评估生成环节</small>
+                            </div>
+                            <div class="flow-arrow">↓ 答案与问题对比</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">
+                                <strong>③ 答案相关性（Answer Relevance）</strong><br>
+                                <small>答案是否回答了用户的问题？——评估整体效果</small>
+                            </div>
+                            <div class="flow-arrow">↓ 答案与标准答案对比</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">
+                                <strong>④ 答案完整性（Answer Completeness）</strong><br>
+                                <small>答案是否涵盖了所有必要信息？——评估覆盖度</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>评估什么</th><th>评估方法</th><th>对应环节</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>检索相关性</strong></td><td>检索到的文档是否相关</td><td>人工打分 / LLM 打分</td><td>检索层</td></tr>
+                        <tr><td><strong>答案忠实度</strong></td><td>答案是否有文档依据</td><td>LLM 事实验证</td><td>生成层</td></tr>
+                        <tr><td><strong>答案相关性</strong></td><td>答案是否回答了问题</td><td>人工打分 / LLM 打分</td><td>端到端</td></tr>
+                        <tr><td><strong>答案完整性</strong></td><td>答案是否覆盖所有要点</td><td>与标准答案对比</td><td>端到端</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>📏 评分标准</h2>
+                <p>每个维度通常使用 0-1 或 1-5 的评分标准。以下是常用的 0-1 二分类标准：</p>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>1 分（通过）</th><th>0 分（不通过）</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>检索相关性</strong></td>
+                            <td>检索到的文档中至少有一篇包含答案</td>
+                            <td>所有检索到的文档都不包含答案</td>
+                        </tr>
+                        <tr>
+                            <td><strong>答案忠实度</strong></td>
+                            <td>答案中的每个事实都能在检索到的文档中找到依据</td>
+                            <td>答案中存在无法被文档支持的事实（幻觉）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>答案相关性</strong></td>
+                            <td>答案直接回答了用户的问题</td>
+                            <td>答案偏离了问题，或答非所问</td>
+                        </tr>
+                        <tr>
+                            <td><strong>答案完整性</strong></td>
+                            <td>答案涵盖了标准答案中的所有关键信息</td>
+                            <td>答案遗漏了重要信息</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>忠实度是最重要的维度</strong>：如果答案不忠实（有幻觉），即使相关性再高也是有害的。忠实度是 RAG 系统的底线。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <pre><code>from ragas import evaluate
+from ragas.metrics import (
+    faithfulness,        # 答案忠实度
+    answer_relevancy,    # 答案相关性
+    context_recall,      # 检索召回率
+    context_precision,   # 检索精确度
+)
+from datasets import Dataset
+
+# 1. 准备评估数据
+# 每条数据包含：问题、答案、检索到的上下文、标准答案
+eval_data = {
+    "question": [
+        "沈令月嫁给了谁？",
+        "谢初的官职是什么？",
+        "长林盛宴多久举办一次？",
+    ],
+    "answer": [
+        "沈令月嫁给了谢初。",
+        "谢初官至太傅。",
+        "长林盛宴三年举办一次。",
+    ],
+    "contexts": [
+        ["永和五年，沈令月下嫁谢初，举国同庆。"],
+        ["谢初在长林盛宴中拔得头筹，被皇帝封为太傅。"],
+        ["长林盛宴是三年一度的文武比试，胜者可获得皇帝赏赐。"],
+    ],
+    "ground_truth": [
+        "沈令月在永和五年下嫁谢初。",
+        "谢初被皇帝封为太傅。",
+        "长林盛宴每三年举办一次。",
+    ],
+}
+
+# 2. 转换为 Ragas 数据集
+dataset = Dataset.from_dict(eval_data)
+
+# 3. 执行评估
+result = evaluate(
+    dataset=dataset,
+    metrics=[
+        context_precision,   # 检索精确度：检索到的文档中有多少是相关的
+        context_recall,      # 检索召回率：相关文档中有多少被检索到
+        faithfulness,        # 答案忠实度：答案是否有文档依据
+        answer_relevancy,    # 答案相关性：答案是否回答了问题
+    ],
+    llm=eval_llm,            # 用于评估的 LLM（可以用 GPT-4）
+)
+
+# 4. 查看结果
+print(result)
+# 输出示例：
+# {
+#     'context_precision': 0.917,
+#     'context_recall':    0.833,
+#     'faithfulness':      0.944,
+#     'answer_relevancy':  0.912,
+# }
+
+# 5. 查看详细结果（每条数据的分数）
+df = result.to_pandas()
+print(df)</code></pre>
+            </section>
+
+            <section>
+                <h2>📊 评估结果示例</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>问题</th><th>检索精确度</th><th>检索召回率</th><th>忠实度</th><th>答案相关性</th><th>综合</th></tr></thead>
+                    <tbody>
+                        <tr><td>"沈令月嫁给了谁？"</td><td>1.0</td><td>1.0</td><td>1.0</td><td>1.0</td><td>✅ 优秀</td></tr>
+                        <tr><td>"谢初的官职是什么？"</td><td>1.0</td><td>0.5</td><td>1.0</td><td>0.8</td><td>⚠️ 召回不足</td></tr>
+                        <tr><td>"长林盛宴多久举办一次？"</td><td>0.5</td><td>1.0</td><td>0.7</td><td>0.9</td><td>⚠️ 精确度低</td></tr>
+                        <tr><td>"沈令月和谢初的关系"</td><td>0.3</td><td>0.5</td><td>0.5</td><td>0.6</td><td>❌ 需优化</td></tr>
+                    </tbody>
+                </table>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>评估结果分析流程</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">查看综合分数</div>
+                            <div class="flow-arrow">↓ 定位薄弱环节</div>
+                            <div class="flow" style="justify-content:space-around;">
+                                <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">检索分数低<br><small>→ 优化检索<br>换 Embedding / 调参数</small></div>
+                                <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">忠实度低<br><small>→ 优化 Prompt<br>加强"基于文档回答"指令</small></div>
+                                <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">相关性低<br><small>→ 优化检索 + Prompt<br>检查切块策略</small></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🎯 适用场景</h2>
+                <div class="tips">
+                    <div class="tip"><strong>上线前评估</strong> — 在正式发布前，用评估数据集验证系统是否达到预期质量</div>
+                    <div class="tip"><strong>迭代优化</strong> — 每次修改检索策略、Prompt、Embedding 模型后，对比评估分数变化</div>
+                    <div class="tip"><strong>A/B 测试</strong> — 对比两种方案（如 BM25 vs 混合检索）的量化效果差异</div>
+                    <div class="tip"><strong>回归测试</strong> — 更新知识库后，确保系统质量没有下降</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>⚠️ 注意事项</h2>
+                <div class="tips">
+                    <div class="tip"><strong>评估数据集质量</strong>：评估数据集的代表性直接决定评估结果的可靠性。建议至少准备 50-100 条覆盖各种问题类型的数据。</div>
+                    <div class="tip"><strong>LLM 评估的偏差</strong>：用 LLM 评估 LLM 存在"自评偏差"。建议关键场景下用人工评估交叉验证。</div>
+                    <div class="tip"><strong>不要只看平均分</strong>：平均分高不代表系统好。关注最差 case（P10 分数），这些才是用户实际遇到的糟糕体验。</div>
+                    <div class="tip"><strong>评估成本</strong>：Ragas 的评估需要调用 LLM，100 条数据大约需要 200-400 次 LLM 调用。建议用较便宜的模型做日常评估，用 GPT-4 做关键节点评估。</div>
+                    <div class="tip"><strong>维度之间的权衡</strong>：提高检索召回率（检索更多文档）可能降低精确度（引入更多噪音）。需要根据业务场景找到最佳平衡点。</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="09_上下文压缩.html" class="prev">← 上一页</a>
+            <a href="11_对话记忆.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

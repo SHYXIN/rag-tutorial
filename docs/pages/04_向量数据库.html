@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>04 向量数据库 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html" class="active">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">04</span>
+            <h1>向量数据库</h1>
+            <p class="page-desc">存储和检索向量的专用数据库，RAG 的核心基础设施</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 什么是向量数据库？</h2>
+                <p>传统数据库通过<strong>精确匹配</strong>查找数据（如 WHERE name = '沈令月'），而向量数据库通过<strong>相似度搜索</strong>查找数据。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>传统数据库 vs 向量数据库</h4>
+                        <div class="flow">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">传统数据库<br><small>精确匹配<br>"沈令月" = "沈令月"</small></div>
+                            <div class="flow-arrow">🆚</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">向量数据库<br><small>相似度搜索<br>"公主" ≈ "沈令月"</small></div>
+                        </div>
+                    </div>
+                </div>
+                <p>向量数据库的核心能力：<strong>给定一个查询向量，快速找到与其最相似的 K 个向量。</strong>这个操作称为 ANN（Approximate Nearest Neighbor，近似最近邻）搜索。</p>
+            </section>
+
+            <section>
+                <h2>📐 核心概念</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>向量检索流程</h4>
+                        <div class="flow">
+                            <div class="flow-step">查询文本<br><small>"沈令月的身份"</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">Embedding<br><small>文本 → 向量</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">ANN 搜索<br><small>在索引中查找</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">Top-K 结果<br><small>最相似的 K 个文档</small></div>
+                        </div>
+                    </div>
+                </div>
+
+                <table class="comparison-table">
+                    <thead><tr><th>概念</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>向量（Vector）</td><td>由 Embedding 模型生成的高维数组，如 512 维、1024 维</td></tr>
+                        <tr><td><strong>索引（Index）</td><td>加速检索的数据结构，如 HNSW、IVF、PQ</td></tr>
+                        <tr><td><strong>ANN 搜索</td><td>近似最近邻搜索，牺牲少量精度换取大幅速度提升</td></tr>
+                        <tr><td><strong>Top-K</td><td>返回相似度最高的 K 个结果</td></tr>
+                        <tr><td><strong>距离度量</td><td>余弦相似度、欧氏距离、内积</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🏗️ HNSW 索引原理（简化版）</h2>
+                <p>HNSW（Hierarchical Navigable Small World）是目前最流行的向量索引算法，核心思想是<strong>分层图搜索</strong>。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>HNSW 分层结构</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdebd0; border-color:#f0b27a;">第 2 层（顶层）：稀疏，只有少数节点，快速定位大致区域</div>
+                            <div class="flow-arrow">↓ 逐层下降</div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">第 1 层（中层）：中等密度，进一步缩小范围</div>
+                            <div class="flow-arrow">↓ 逐层下降</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">第 0 层（底层）：包含所有节点，精确搜索最近邻</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tips">
+                    <div class="tip"><strong>类比</strong>：就像查字典先看目录（顶层），再看章节（中层），最后翻到具体页（底层）。</div>
+                    <div class="tip"><strong>关键参数</strong>：M（每层最大邻居数，影响精度和内存）、efConstruction（建索引时的搜索深度）、efSearch（查询时的搜索深度）。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📊 常见向量数据库对比</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>数据库</th><th>部署方式</th><th>索引类型</th><th>特点</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Chroma</strong></td><td>本地/嵌入式</td><td>HNSW</td><td>开箱即用，Python 友好，适合原型开发</td><td>本地开发、小项目</td></tr>
+                        <tr><td><strong>Milvus</strong></td><td>分布式服务</td><td>HNSW/IVF/PQ</td><td>企业级，高性能，支持十亿级向量</td><td>大规模生产环境</td></tr>
+                        <tr><td><strong>Pinecone</strong></td><td>全托管云服务</td><td>专有索引</td><td>零运维，按量付费，Serverless</td><td>快速上线、不想运维</td></tr>
+                        <tr><td><strong>Qdrant</strong></td><td>自托管/Docker</td><td>HNSW</td><td>Rust 实现，性能优秀，支持过滤</td><td>中等规模、需要过滤</td></tr>
+                        <tr><td><strong>pgvector</strong></td><td>PostgreSQL 扩展</td><td>IVF/HNSW</td><td>在现有 PG 上加向量能力，事务支持</td><td>已有 PG 的项目</td></tr>
+                        <tr><td><strong>Weaviate</strong></td><td>自托管/云服务</td><td>HNSW</td><td>GraphQL API，支持混合检索</td><td>需要混合检索的场景</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>💻 Chroma 使用示例</h2>
+                <pre><code>import chromadb
+from chromadb.utils import embedding_functions
+
+# 1. 创建客户端（本地持久化）
+client = chromadb.PersistentClient(path="./chroma_db")
+
+# 2. 创建集合（指定 Embedding 函数和距离度量）
+ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="BAAI/bge-small-zh-v1.5"
+)
+collection = client.get_or_create_collection(
+    name="novel_chunks",
+    embedding_function=ef,
+    metadata={"hnsw:space": "cosine"}  # 余弦相似度
+)
+
+# 3. 添加文档
+collection.add(
+    documents=["沈令月是当朝嫡公主，性格温婉。", "谢初在长林盛宴中拔得头筹。"],
+    metadatas=[{"chapter": 1, "source": "novel.txt"}, {"chapter": 2, "source": "novel.txt"}],
+    ids=["chunk_001", "chunk_002"]
+)
+
+# 4. 检索
+results = collection.query(
+    query_texts=["公主是谁？"],
+    n_results=3,
+    where={"chapter": {"$lte": 5}}  # 可选：元数据过滤
+)
+
+# 5. 查看结果
+for doc, score in zip(results['documents'][0], results['distances'][0]):
+    print(f"[{score:.3f}] {doc}")</code></pre>
+            </section>
+
+            <section>
+                <h2>⚡ 性能调优参数</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>参数</th><th>作用</th><th>调大效果</th><th>调小效果</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>M</strong>（HNSW）</td><td>每层最大邻居数</td><td>精度更高，内存更大</td><td>内存更小，精度降低</td></tr>
+                        <tr><td><strong>efConstruction</strong></td><td>建索引搜索深度</td><td>索引质量更高，建得更慢</td><td>建索引更快，质量降低</td></tr>
+                        <tr><td><strong>efSearch</strong></td><td>查询时搜索深度</td><td>召回率更高，查询更慢</td><td>查询更快，召回率降低</td></tr>
+                        <tr><td><strong>nprobe</strong>（IVF）</td><td>搜索的聚类数</td><td>精度更高，速度更慢</td><td>速度更快，精度降低</td></tr>
+                        <tr><td><strong>Top-K</strong></td><td>返回结果数</td><td>上下文更丰富，可能含噪音</td><td>上下文更精简，可能遗漏</td></tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>经验值</strong>：M=16, efConstruction=200, efSearch=100 是一个不错的起点。</div>
+                    <div class="tip"><strong>内存估算</strong>：100 万条 512 维向量 + HNSW 索引，大约需要 2-4 GB 内存。</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="03_文档切块.html" class="prev">← 上一页</a>
+            <a href="05_微调vsRAG.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

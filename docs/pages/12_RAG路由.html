@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>12 RAG 路由 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html" class="active">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">12</span>
+            <h1>RAG 路由（Router）</h1>
+            <p class="page-desc">根据问题类型自动选择最优检索策略</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 问题背景：不同问题适合不同策略</h2>
+                <p>在实际应用中，用户的问题千差万别——有的需要精确查找，有的需要语义理解，有的甚至不需要检索。如果所有问题都走同一套检索流程，要么<strong>精度不够</strong>，要么<strong>浪费资源</strong>。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>同一套策略处理不同问题的困境</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">
+                                <strong>精确查询</strong>："谢初的官职是什么？"<br>
+                                <small>用向量检索 → 可能把"太傅"和"太傅府"混淆，不够精确</small>
+                            </div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                <strong>语义查询</strong>："公主最后嫁给了谁？"<br>
+                                <small>用关键词检索 → "公主""嫁给"可能匹配不到"沈令月下嫁谢初"</small>
+                            </div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                <strong>简单查询</strong>："你好"<br>
+                                <small>用任何检索 → 完全没必要，直接让 LLM 回复即可</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tips">
+                    <div class="tip"><strong>核心思路</strong>：在检索之前，先对问题进行分类，然后根据类型路由到不同的处理策略——这就是 RAG 路由。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💡 核心思路：问题分类 → 选择策略</h2>
+                <p>RAG 路由的本质是一个<strong>决策层</strong>，它在用户问题和检索策略之间充当"交通指挥官"：</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>路由决策流程</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">用户问题输入</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">问题分类器<br><small>判断问题类型</small></div>
+                            <div class="flow-arrow">↓ 根据类型路由</div>
+                            <div class="flow" style="justify-content:space-around;">
+                                <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">精确查询<br><small>→ BM25 检索</small></div>
+                                <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">语义查询<br><small>→ 向量检索</small></div>
+                                <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">简单查询<br><small>→ 直接 LLM</small></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📋 三种问题类型详解</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>类型</th><th>特征</th><th>示例问题</th><th>最佳策略</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>精确查询</strong></td>
+                            <td>包含专有名词、数字、日期、代码等需要精确匹配的内容</td>
+                            <td>"谢初的官职？"<br>"永和五年发生了什么？"<br>"ISBN 978-7-xxx 的价格？"</td>
+                            <td>BM25 关键词检索</td>
+                        </tr>
+                        <tr>
+                            <td><strong>语义查询</strong></td>
+                            <td>自然语言描述，需要理解语义和概念</td>
+                            <td>"公主最后嫁给了谁？"<br>"谢初是怎么晋升的？"</td>
+                            <td>向量语义检索</td>
+                        </tr>
+                        <tr>
+                            <td><strong>简单查询</strong></td>
+                            <td>问候、闲聊、通用知识，不需要检索</td>
+                            <td>"你好"<br>"今天天气怎么样？"<br>"解释一下什么是 AI"</td>
+                            <td>直接 LLM 生成</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>📐 路由规则表</h2>
+                <p>路由器的核心是一张规则表，定义了从问题特征到检索策略的映射：</p>
+                <table class="comparison-table">
+                    <thead><tr><th>判断条件</th><th>路由目标</th><th>原因</th></tr></thead>
+                    <tbody>
+                        <tr><td>问题长度 &lt; 5 字 且无实体</td><td>直接 LLM</td><td>太短，大概率是闲聊或问候</td></tr>
+                        <tr><td>包含数字/日期/专有名词</td><td>BM25 检索</td><td>精确匹配比语义匹配更可靠</td></tr>
+                        <tr><td>包含"什么是"/"解释"/"介绍"</td><td>直接 LLM 或向量检索</td><td>通用知识问题，可能不需要检索</td></tr>
+                        <tr><td>包含"怎么"/"如何"/"为什么"</td><td>向量检索</td><td>需要理解语义和因果关系</td></tr>
+                        <tr><td>包含代词（他/她/它/他们）</td><td>先指代消解 → 向量检索</td><td>需要上下文理解</td></tr>
+                        <tr><td>包含"多少"/"几个"/"第几"</td><td>BM25 + 向量混合</td><td>既需要精确匹配也需要语义理解</td></tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>规则优先级</strong>：精确匹配规则优先于语义匹配规则。如果问题同时满足多个条件，优先选择 BM25 检索。</div>
+                    <div class="tip"><strong>兜底策略</strong>：如果路由不确定，默认走混合检索（BM25 + 向量），确保覆盖率。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <pre><code>from enum import Enum
+from langchain.retrievers import BM25Retriever
+from langchain_community.vectorstores import Chroma
+
+class QueryType(Enum):
+    EXACT = "exact"       # 精确查询
+    SEMANTIC = "semantic" # 语义查询
+    SIMPLE = "simple"     # 简单查询
+
+class QuestionRouter:
+    """问题路由器：根据问题类型选择检索策略"""
+
+    def __init__(self, bm25_retriever: BM25Retriever,
+                 vector_retriever, llm=None):
+        self.bm25 = bm25_retriever
+        self.vector = vector_retriever
+        self.llm = llm
+
+    def classify(self, question: str) -> QueryType:
+        """规则-based 问题分类"""
+        # 简单查询：太短且无意义
+        if len(question.strip()) < 5:
+            return QueryType.SIMPLE
+
+        # 精确查询：包含数字、日期、专有名词
+        import re
+        if re.search(r'\d{4}年|\d+月|\d+日|ISBN|编号|代码', question):
+            return QueryType.EXACT
+
+        # 精确查询：包含引号（用户明确指定了关键词）
+        if '"' in question or "'" in question:
+            return QueryType.EXACT
+
+        # 语义查询：包含疑问词
+        if re.search(r'怎么|如何|为什么|什么|谁|哪|多少|几个', question):
+            return QueryType.SEMANTIC
+
+        # 默认：语义查询
+        return QueryType.SEMANTIC
+
+    def route(self, question: str):
+        """根据分类结果路由到对应策略"""
+        query_type = self.classify(question)
+
+        if query_type == QueryType.SIMPLE:
+            return {"type": "simple", "results": []}
+
+        elif query_type == QueryType.EXACT:
+            docs = self.bm25.invoke(question)
+            return {"type": "exact", "results": docs}
+
+        else:  # SEMANTIC
+            docs = self.vector.invoke(question)
+            return {"type": "semantic", "results": docs}
+
+
+class RouterRAG:
+    """带路由的 RAG 系统"""
+
+    def __init__(self, router: QuestionRouter, llm):
+        self.router = router
+        self.llm = llm
+
+    def ask(self, question: str) -> str:
+        # 1. 路由决策
+        route_result = self.router.route(question)
+        query_type = route_result["type"]
+        docs = route_result["results"]
+
+        # 2. 根据类型生成回答
+        if query_type == "simple":
+            prompt = f"用户说：{question}\n请直接回复："
+        else:
+            context = "\n".join(d.page_content for d in docs[:5])
+            prompt = f"""根据以下文档回答问题。
+
+文档：
+{context}
+
+问题：{question}
+回答："""
+
+        return self.llm.invoke(prompt).content
+
+
+# 使用示例
+router = QuestionRouter(bm25_retriever, vector_retriever, llm)
+rag = RouterRAG(router, llm)
+
+# 不同类型的问题自动路由
+print(rag.ask("你好"))              # → 直接 LLM
+print(rag.ask("谢初的官职？"))      # → BM25 检索
+print(rag.ask("公主嫁给了谁？"))    # → 向量检索</code></pre>
+            </section>
+
+            <section>
+                <h2>📊 效果对比：三种问题的路由结果</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>问题</th><th>分类结果</th><th>路由策略</th><th>检索结果</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td>"你好"</td>
+                            <td><span style="color:#1e8449;">简单查询</span></td>
+                            <td>直接 LLM</td>
+                            <td>"你好！有什么可以帮你的吗？"</td>
+                        </tr>
+                        <tr>
+                            <td>"谢初的官职是什么？"</td>
+                            <td><span style="color:#e74c3c;">精确查询</span></td>
+                            <td>BM25 检索</td>
+                            <td>"谢初任太傅"（精确匹配）</td>
+                        </tr>
+                        <tr>
+                            <td>"永和五年发生了什么？"</td>
+                            <td><span style="color:#e74c3c;">精确查询</span></td>
+                            <td>BM25 检索</td>
+                            <td>"永和五年，沈令月下嫁谢初"</td>
+                        </tr>
+                        <tr>
+                            <td>"公主最后嫁给了谁？"</td>
+                            <td><span style="color:#2980b9;">语义查询</span></td>
+                            <td>向量检索</td>
+                            <td>"沈令月下嫁谢初"（语义匹配）</td>
+                        </tr>
+                        <tr>
+                            <td>"谢初是怎么晋升的？"</td>
+                            <td><span style="color:#2980b9;">语义查询</span></td>
+                            <td>向量检索</td>
+                            <td>"谢初出身寒门，凭借才华晋升至太傅"</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>路由效果：资源节省 vs 精度提升</h4>
+                        <div class="flow">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">无路由<br><small>所有问题都检索<br>慢 + 可能不准</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">有路由<br><small>精确问题走 BM25<br>语义问题走向量<br>简单问题直接回</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🎯 适用场景</h2>
+                <div class="tips">
+                    <div class="tip"><strong>多知识库场景</strong> — 用户问题可能涉及不同领域的知识库（产品文档、技术文档、FAQ），路由可以自动选择正确的知识库</div>
+                    <div class="tip"><strong>混合查询场景</strong> — 用户既有精确查找（订单号、产品编号）也有自然语言问题，路由能自动区分</div>
+                    <div class="tip"><strong>成本敏感场景</strong> — 通过路由跳过不必要的检索，降低 API 调用成本和延迟</div>
+                    <div class="tip"><strong>不适合的场景</strong> — 问题类型单一的系统（如纯 FAQ 问答），路由反而增加复杂度</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🚀 进阶：用 LLM 做路由</h2>
+                <p>规则-based 路由简单高效，但覆盖面有限。更强大的方式是用 LLM 本身来做路由决策：</p>
+                <pre><code>class LLMRouter:
+    """使用 LLM 进行智能路由"""
+
+    def __init__(self, llm, retrievers: dict):
+        """
+        retrievers: {
+            "product_db": product_retriever,
+            "tech_docs": tech_retriever,
+            "faq": faq_retriever,
+        }
+        """
+        self.llm = llm
+        self.retrievers = retrievers
+
+    def route(self, question: str) -> str:
+        """让 LLM 决定使用哪个检索器"""
+        prompt = f"""你是一个路由助手。根据用户问题，选择最合适的知识库。
+
+可选知识库：
+- product_db: 产品信息、价格、规格
+- tech_docs: 技术文档、API 参考、代码示例
+- faq: 常见问题、操作指南、故障排除
+- none: 不需要检索（闲聊、通用知识）
+
+用户问题：{question}
+
+请只输出知识库名称（product_db/tech_docs/faq/none）："""
+
+        target = self.llm.invoke(prompt).content.strip()
+        return target
+
+    def ask(self, question: str) -> str:
+        target = self.route(question)
+
+        if target == "none" or target not in self.retrievers:
+            return self.llm.invoke(question).content
+
+        docs = self.retrievers[target].invoke(question)
+        context = "\n".join(d.page_content for d in docs[:5])
+        prompt = f"根据以下文档回答问题。\n\n文档：{context}\n\n问题：{question}\n回答："
+        return self.llm.invoke(prompt).content</code></pre>
+                <div class="tips">
+                    <div class="tip"><strong>LLM 路由的优势</strong>：能理解复杂语义，处理规则难以覆盖的边界情况（如"帮我查一下上次那个订单"）</div>
+                    <div class="tip"><strong>LLM 路由的代价</strong>：每次问题都要额外调用一次 LLM，增加延迟和成本。可以用小模型（如 GPT-3.5）来降低成本。</div>
+                    <div class="tip"><strong>混合方案</strong>：先用规则快速判断（简单查询直接返回），规则无法判断时再调用 LLM 路由，兼顾效率和准确性。</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="11_对话记忆.html" class="prev">← 上一页</a>
+            <a href="13_Self-RAG.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

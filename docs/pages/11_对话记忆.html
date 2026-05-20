@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>11 对话记忆 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html" class="active">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">11</span>
+            <h1>对话记忆（Conversation Memory）</h1>
+            <p class="page-desc">让 RAG 系统拥有"记忆"，支持多轮对话</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 问题背景：三轮挑战</h2>
+                <p>真实场景中，用户不会一次性把问题说清楚，而是通过多轮对话逐步深入。这给 RAG 系统带来三大挑战：</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>多轮对话的三大挑战</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">
+                                <strong>① 指代消解（Coreference Resolution）</strong><br>
+                                <small>用户说"他后来怎样了？"——"他"指谁？没有上下文就无法理解</small>
+                            </div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                <strong>② 上下文窗口限制（Context Window）</strong><br>
+                                <small>10 轮对话可能有 5000+ tokens，超出模型的上下文窗口</small>
+                            </div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                <strong>③ 信息压缩（Information Compression）</strong><br>
+                                <small>不能简单地把所有历史对话都塞进 Prompt，需要智能压缩</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <table class="comparison-table">
+                    <thead><tr><th>轮次</th><th>用户输入</th><th>问题</th><th>无记忆系统的回答</th></tr></thead>
+                    <tbody>
+                        <tr><td>第 1 轮</td><td>"沈令月是谁？"</td><td>清晰</td><td>"沈令月是当朝嫡公主。"</td></tr>
+                        <tr><td>第 2 轮</td><td>"她嫁给了谁？"</td><td>"她"指代不明</td><td>"请问您说的'她'是指谁？"</td></tr>
+                        <tr><td>第 3 轮</td><td>"他们什么时候结婚的？"</td><td>"他们"指代不明</td><td>"请问您说的'他们'是指谁？"</td></tr>
+                        <tr><td>第 4 轮</td><td>"他的官职是什么？"</td><td>"他"指代不明</td><td>"请问您说的'他'是指谁？"</td></tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>核心需求</strong>：RAG 系统需要"记住"对话历史，才能正确理解后续问题中的指代和省略。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🏗️ 三层记忆架构</h2>
+                <p>借鉴人类记忆的三层模型（感觉记忆、短期记忆、长期记忆），对话记忆也采用三层架构：</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>三层记忆架构</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                <strong>短期记忆：滑动窗口（Sliding Window）</strong><br>
+                                保留最近 N 轮对话原文，不做任何处理<br>
+                                <small>作用：保留最新的对话细节，用于理解指代</small><br>
+                                <small>容量：最近 3-5 轮（~1000-2000 tokens）</small>
+                            </div>
+                            <div class="flow-arrow">↓ 超出窗口的历史</div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                <strong>中期记忆：摘要压缩（Summary Compression）</strong><br>
+                                将超出滑动窗口的历史对话压缩为摘要<br>
+                                <small>作用：保留对话的主要话题和结论</small><br>
+                                <small>容量：1-3 句话的摘要（~100-200 tokens）</small>
+                            </div>
+                            <div class="flow-arrow">↓ 跨会话的信息</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">
+                                <strong>长期记忆：实体追踪（Entity Tracking）</strong><br>
+                                追踪对话中提到的关键实体及其属性<br>
+                                <small>作用：跨会话记住用户关注的人物、事件</small><br>
+                                <small>容量：实体列表（~50-100 tokens）</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <table class="comparison-table">
+                    <thead><tr><th>记忆层</th><th>存储内容</th><th>容量</th><th>更新频率</th><th>实现方式</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>短期（滑动窗口）</strong></td><td>最近 N 轮原文</td><td>~1500 tokens</td><td>每轮追加</td><td>双端队列</td></tr>
+                        <tr><td><strong>中期（摘要压缩）</strong></td><td>历史对话摘要</td><td>~150 tokens</td><td>每 N 轮更新</td><td>LLM 摘要</td></tr>
+                        <tr><td><strong>长期（实体追踪）</strong></td><td>关键实体列表</td><td>~80 tokens</td><td>每轮更新</td><td>NER + 属性提取</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <pre><code>from collections import deque
+from langchain_core.messages import HumanMessage, AIMessage
+
+class ConversationMemory:
+    """三层对话记忆系统"""
+
+    def __init__(self, llm, window_size=3):
+        self.llm = llm
+        self.window_size = window_size
+        # 短期记忆：滑动窗口，保留最近 N 轮原文
+        self.short_term = deque(maxlen=window_size * 2)
+        # 中期记忆：摘要
+        self.mid_term_summary = ""
+        # 长期记忆：实体追踪
+        self.long_term_entities = {}
+
+    def add_message(self, human_msg: str, ai_msg: str):
+        """添加一轮对话"""
+        self.short_term.append(HumanMessage(content=human_msg))
+        self.short_term.append(AIMessage(content=ai_msg))
+        self._update_entities(human_msg, ai_msg)
+        if len(self.short_term) == self.short_term.maxlen:
+            self._compress_to_mid_term()
+
+    def _update_entities(self, human_msg, ai_msg):
+        """提取并更新实体"""
+        known_entities = {
+            "沈令月": {"type": "人物", "身份": "嫡公主", "配偶": "谢初"},
+            "谢初": {"type": "人物", "官职": "太傅", "配偶": "沈令月"},
+        }
+        for name, attrs in known_entities.items():
+            if name in human_msg or name in ai_msg:
+                self.long_term_entities[name] = attrs
+
+    def _compress_to_mid_term(self):
+        """将短期记忆压缩为中期摘要"""
+        history_text = "\n".join(
+            f"{'用户' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
+            for m in self.short_term
+        )
+        prompt = f"请用 1-2 句话总结以下对话的核心内容：\n{history_text}"
+        self.mid_term_summary = self.llm.invoke(prompt).content
+        self.short_term.clear()
+
+    def get_context(self) -> str:
+        """获取完整的记忆上下文"""
+        parts = []
+        if self.long_term_entities:
+            desc = "\n".join(f"- {n}：{a}" for n, a in self.long_term_entities.items())
+            parts.append(f"已知实体：\n{desc}")
+        if self.mid_term_summary:
+            parts.append(f"对话摘要：{self.mid_term_summary}")
+        if self.short_term:
+            recent = "\n".join(
+                f"{'用户' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
+                for m in self.short_term
+            )
+            parts.append(f"最近对话：\n{recent}")
+        return "\n\n".join(parts)
+
+    def rewrite_question(self, question: str) -> str:
+        """基于记忆重写问题（指代消解）"""
+        context = self.get_context()
+        if not context:
+            return question
+        prompt = f"""根据以下对话历史，将用户的新问题改写为自包含问题。
+
+对话历史：
+{context}
+
+用户新问题：{question}
+
+改写后的问题："""
+        return self.llm.invoke(prompt).content
+
+
+# 使用
+memory = ConversationMemory(llm, window_size=3)
+memory.add_message("沈令月是谁？", "沈令月是当朝嫡公主。")
+rewritten = memory.rewrite_question("她嫁给了谁？")
+print(f"改写后：{rewritten}")
+# 输出："沈令月嫁给了谁？"（自动补全了"她"的指代）</code></pre>
+            </section>
+
+            <section>
+                <h2>📊 效果演示：5 轮对话的记忆变化</h2>
+                <p>以下展示 5 轮对话中，三层记忆的内容变化：</p>
+                <table class="comparison-table">
+                    <thead><tr><th>轮次</th><th>用户问题</th><th>改写后的问题</th><th>短期记忆</th><th>中期记忆</th><th>长期记忆</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td>第 1 轮</td>
+                            <td>"沈令月是谁？"</td>
+                            <td>无需改写</td>
+                            <td>[沈令月是谁？/ 嫡公主]</td>
+                            <td>（空）</td>
+                            <td>沈令月：嫡公主</td>
+                        </tr>
+                        <tr>
+                            <td>第 2 轮</td>
+                            <td>"她嫁给了谁？"</td>
+                            <td>"沈令月嫁给了谁？"</td>
+                            <td>[第1轮 + 第2轮]</td>
+                            <td>（空）</td>
+                            <td>+谢初：太傅</td>
+                        </tr>
+                        <tr>
+                            <td>第 3 轮</td>
+                            <td>"他们何时结婚？"</td>
+                            <td>"沈令月和谢初何时结婚？"</td>
+                            <td>[第1轮 + 第2轮 + 第3轮]</td>
+                            <td>（空）</td>
+                            <td>（不变）</td>
+                        </tr>
+                        <tr>
+                            <td>第 4 轮</td>
+                            <td>"他的官职？"</td>
+                            <td>"谢初的官职是什么？"</td>
+                            <td>[第2轮 + 第3轮 + 第4轮]</td>
+                            <td>第1轮被压缩为摘要</td>
+                            <td>（不变）</td>
+                        </tr>
+                        <tr>
+                            <td>第 5 轮</td>
+                            <td>"那长林盛宴呢？"</td>
+                            <td>"长林盛宴和沈令月、谢初有什么关系？"</td>
+                            <td>[第3轮 + 第4轮 + 第5轮]</td>
+                            <td>第2轮被压缩追加</td>
+                            <td>+长林盛宴</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>第 4 轮时的记忆状态</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">
+                                <strong>长期记忆</strong>：沈令月{嫡公主, 配偶:谢初}；谢初{太傅, 配偶:沈令月}
+                            </div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">
+                                <strong>中期记忆</strong>："用户询问了沈令月的身份，得知她是当朝嫡公主。"
+                            </div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">
+                                <strong>短期记忆</strong>：[她嫁给了谁？/ 谢初][他们何时结婚？/ 永和五年][他的官职？/ ...]
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🎯 适用场景</h2>
+                <div class="tips">
+                    <div class="tip"><strong>客服机器人</strong> — 用户会多次追问同一个订单/问题，需要记住上下文</div>
+                    <div class="tip"><strong>知识问答助手</strong> — 用户围绕一个主题深入提问，后续问题依赖前面的回答</div>
+                    <div class="tip"><strong>代码助手</strong> — 用户逐步描述需求，后续修改依赖前面的代码上下文</div>
+                    <div class="tip"><strong>不适合的场景</strong> — 每次对话完全独立（如一次性问答），加记忆反而增加成本和延迟</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>⚙️ 生产优化建议</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>优化方向</th><th>策略</th><th>效果</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>降低延迟</strong></td><td>摘要压缩和实体提取与 LLM 生成并行执行</td><td>节省 ~300ms</td></tr>
+                        <tr><td><strong>降低 Token</strong></td><td>实体列表用结构化格式（JSON）而非自然语言</td><td>节省 ~40% Token</td></tr>
+                        <tr><td><strong>提高指代消解准确率</strong></td><td>用轻量级 NER 模型替代 LLM 提取实体</td><td>更快更稳定</td></tr>
+                        <tr><td><strong>跨会话记忆</strong></td><td>将实体列表持久化到数据库，下次对话加载</td><td>支持长期用户画像</td></tr>
+                        <tr><td><strong>记忆清理</strong></td><td>定期清理不活跃的实体，避免记忆膨胀</td><td>控制 Token 增长</td></tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>滑动窗口大小</strong>：window_size=3 是大多数场景的起点。指代密集的场景（如代码讨论）可调大到 5，简单问答可减小到 2。</div>
+                    <div class="tip"><strong>摘要质量</strong>：中期记忆的摘要质量直接影响指代消解效果。建议在摘要 Prompt 中明确要求"保留所有人物和关键事实"。</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="10_RAG评估.html" class="prev">← 上一页</a>
+            <a href="12_RAG路由.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

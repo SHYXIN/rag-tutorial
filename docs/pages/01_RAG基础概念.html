@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>01 RAG 基础概念 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html" class="active">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">01</span>
+            <h1>RAG 基础概念</h1>
+            <p class="page-desc">什么是 RAG、完整流程、核心组件</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 什么是 RAG？</h2>
+                <p><strong>RAG（Retrieval-Augmented Generation，检索增强生成）</strong> = 检索系统 + 生成模型</p>
+                <p>核心思想：<strong>在让 LLM 回答问题之前，先从外部知识库中检索相关信息，然后把检索结果和问题一起提供给模型。</strong></p>
+            </section>
+
+            <section>
+                <h2>🔄 完整流程</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>离线阶段（知识库构建）</h4>
+                        <div class="flow">
+                            <div class="flow-step">原始文档<br><small>PDF/Word/网页</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">文档解析<br><small>提取纯文本</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">文档切块<br><small>200-500 字符</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">Embedding<br><small>文本 → 向量</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">向量数据库<br><small>存储 + 索引</small></div>
+                        </div>
+                    </div>
+                    <div class="diagram-box">
+                        <h4>在线阶段（用户提问）</h4>
+                        <div class="flow">
+                            <div class="flow-step">用户问题</div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">Embedding<br><small>问题 → 向量</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">检索<br><small>相似度搜索</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">上下文压缩<br><small>提取关键句</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">LLM 生成<br><small>基于文档回答</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🧩 核心组件</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>组件</th><th>作用</th><th>常用选择</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>文档解析</td><td>提取纯文本</td><td>PyPDFLoader, TextLoader</td></tr>
+                        <tr><td>文档切块</td><td>切分成小块</td><td>RecursiveCharacterTextSplitter</td></tr>
+                        <tr><td>Embedding</td><td>文本转向量</td><td>BGE, OpenAI Embeddings</td></tr>
+                        <tr><td>向量数据库</td><td>存储和检索向量</td><td>Chroma, Milvus, Pinecone</td></tr>
+                        <tr><td>LLM</td><td>生成回答</td><td>GPT-4, Claude, LongCat</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🆚 RAG vs 微调</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>维度</th><th>微调</th><th>RAG</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>知识存储</td><td>模型权重内部</td><td>外部知识库</td></tr>
+                        <tr><td>知识更新</td><td>需要重新训练</td><td>更新知识库即可</td></tr>
+                        <tr><td>答案可追溯</td><td>❌ 无法追溯</td><td>✅ 可追溯到文档</td></tr>
+                        <tr><td>成本</td><td>高（GPU 训练）</td><td>低（检索 + API）</td></tr>
+                        <tr><td>幻觉风险</td><td>可能</td><td>较低（有文档依据）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>💡 经验法则</h2>
+                <div class="tips">
+                    <div class="tip">
+                        <strong>知识需要频繁更新</strong> → 用 RAG
+                    </div>
+                    <div class="tip">
+                        <strong>需要改变模型行为/风格</strong> → 用微调
+                    </div>
+                    <div class="tip">
+                        <strong>两者可以结合</strong> → 先用微调优化模型，再用 RAG 提供知识
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <span class="prev">← 上一页</span>
+            <a href="02_Embedding与向量化.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

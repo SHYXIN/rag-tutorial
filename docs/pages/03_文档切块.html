@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>03 文档切块 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html" class="active">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">03</span>
+            <h1>文档切块</h1>
+            <p class="page-desc">切块策略、块大小选择、重叠的重要性</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 为什么需要切块？</h2>
+                <p>LLM 的 context window 有限，不能把整篇文档塞进去。</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <div class="flow" style="flex-direction:column; gap:12px;">
+                            <div class="flow-step" style="width:100%; max-width:400px;">一篇小说 = 400,000 字符</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step" style="width:100%; max-width:400px;">LLM context window = 4,096 token ≈ 6,000 字符</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-step" style="width:100%; max-width:400px; background:#fef9e7; border-color:#f9e79f;">必须切成小块，每次只检索相关的小块</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📏 切块策略</h2>
+                <h3>1. 固定长度切块（最简单）</h3>
+                <pre><code>from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=300,        # 每块 300 字符
+    chunk_overlap=30,      # 块之间重叠 30 字符
+    separators=["\n\n", "\n", "。", "！", "？", " ", ""]
+)</code></pre>
+
+                <h3>2. 递归切块（推荐）</h3>
+                <p>LangChain 的 RecursiveCharacterTextSplitter 按优先级尝试切分：</p>
+                <div class="flow" style="margin:16px 0;">
+                    <div class="flow-step">按 \n\n（段落）切分</div>
+                    <div class="flow-arrow">↓ 太长</div>
+                    <div class="flow-step">按 \n（换行）切分</div>
+                    <div class="flow-arrow">↓ 太长</div>
+                    <div class="flow-step">按 。（句子）切分</div>
+                    <div class="flow-arrow">↓ 太长</div>
+                    <div class="flow-step">按字符切分</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📊 块大小的影响</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>块大小</th><th>优点</th><th>缺点</th></tr></thead>
+                    <tbody>
+                        <tr><td>小（100-200）</td><td>检索精准，噪音少</td><td>可能丢失上下文，需要更多块</td></tr>
+                        <tr><td>中（300-500）</td><td>平衡精准度和上下文</td><td>通用选择</td></tr>
+                        <tr><td>大（800-1000）</td><td>上下文完整</td><td>可能包含无关内容，检索不够精准</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🔗 重叠的重要性</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>无重叠</h4>
+                        <div class="flow" style="flex-direction:column; gap:8px;">
+                            <div class="flow-step" style="background:#fdedec;">块1: "...沈令月选谢初为驸马。"</div>
+                            <div class="flow-step" style="background:#fdedec;">块2: "谢初在长林盛宴中..."</div>
+                            <div class="flow-step" style="background:#fef9e7;">检索"谢初"时，块1 可能漏掉</div>
+                        </div>
+                    </div>
+                    <div class="diagram-box">
+                        <h4>有重叠（overlap=30）</h4>
+                        <div class="flow" style="flex-direction:column; gap:8px;">
+                            <div class="flow-step" style="background:#eafaf1;">块1: "...沈令月选谢初为驸马。谢初在..."</div>
+                            <div class="flow-step" style="background:#eafaf1;">块2: "谢初在长林盛宴中拔得头筹..."</div>
+                            <div class="flow-step" style="background:#eafaf1;">两个块都包含"谢初"，不会漏掉</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💡 实际经验</h2>
+                <div class="tips">
+                    <div class="tip"><strong>小说/故事</strong> — 按段落切分，chunk_size=300-500，overlap=30-50</div>
+                    <div class="tip"><strong>技术文档</strong> — 按章节/段落切分，chunk_size=500-800</div>
+                    <div class="tip"><strong>FAQ</strong> — 每个问答作为一块（不需要再切）</div>
+                    <div class="tip"><strong>代码</strong> — 按函数/类切分</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="02_Embedding与向量化.html" class="prev">← 上一页</a>
+            <a href="04_向量数据库.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>

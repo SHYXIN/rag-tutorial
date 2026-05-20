@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>08 混合检索 — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html" class="active">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">08</span>
+            <h1>混合检索（Hybrid Search）</h1>
+            <p class="page-desc">BM25 关键词检索 + 向量语义检索，取长补短</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 问题背景：两种检索各有盲区</h2>
+                <p>在 RAG 系统中，最常见的两种检索方式各有致命弱点：</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>两种检索的盲区对比</h4>
+                        <div class="flow">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">BM25 关键词检索<br><small>✅ 精确匹配关键词<br>❌ 不懂语义相似</small></div>
+                            <div class="flow-arrow">🆚</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">向量语义检索<br><small>✅ 理解语义相似<br>❌ 不擅长精确匹配</small></div>
+                        </div>
+                    </div>
+                </div>
+                <table class="comparison-table">
+                    <thead><tr><th>场景</th><th>BM25</th><th>向量检索</th></tr></thead>
+                    <tbody>
+                        <tr><td>用户搜"沈令月"，文档写"沈令月"</td><td>✅ 精确匹配</td><td>✅ 能匹配</td></tr>
+                        <tr><td>用户搜"公主"，文档写"沈令月"</td><td>❌ 关键词不同</td><td>✅ 语义相近</td></tr>
+                        <tr><td>用户搜"永和五年"，文档写"永和五年"</td><td>✅ 精确匹配</td><td>❌ 数字/日期向量区分度低</td></tr>
+                        <tr><td>用户搜"谢初官职"，文档写"谢初任太傅"</td><td>❌ 关键词不完全重合</td><td>✅ 语义相近</td></tr>
+                        <tr><td>用户搜"ISBN 978-7-xxx"</td><td>✅ 精确匹配</td><td>❌ ISBN 向量无意义</td></tr>
+                    </tbody>
+                </table>
+                <div class="tips">
+                    <div class="tip"><strong>核心结论</strong>：BM25 擅长精确匹配（专有名词、数字、代码），向量检索擅长语义匹配（同义词、概念、描述）。两者互补，缺一不可。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💡 核心思路：BM25 + 向量取并集</h2>
+                <p>混合检索的核心思想很简单：<strong>同时运行 BM25 和向量检索，然后合并结果。</strong></p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>混合检索流程</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step">用户问题："沈令月在永和五年嫁给了谁？"</div>
+                            <div class="flow-arrow">↓ 并行执行两种检索</div>
+                            <div class="flow" style="justify-content:space-around;">
+                                <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">BM25 检索<br><small>匹配关键词<br>"沈令月""永和五年"</small></div>
+                                <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">向量检索<br><small>语义匹配<br>"公主""下嫁"</small></div>
+                            </div>
+                            <div class="flow-arrow">↓ 合并结果（去重 + 排序）</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">合并结果：取 BM25 Top-5 + 向量 Top-5 → 去重 → 重排序 → 返回 Top-5</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📐 BM25 原理：TF-IDF 公式</h2>
+                <p>BM25 基于经典的 TF-IDF 思想，但做了改进。其核心公式：</p>
+                <pre><code>BM25(q, d) Σ TF(qi, d) × IDF(qi)
+
+其中：
+┌─────────────────────────────────────────────────────────┐
+│ TF(qi, d) = (freq × (k1 + 1)) / (freq + k1 × (1 - b + b × |d|/avgdl)) │
+│                                                         │
+│ IDF(qi)   = log((N - n(qi) + 0.5) / (n(qi) + 0.5) + 1) │
+└─────────────────────────────────────────────────────────┘
+
+参数说明：
+• freq    : 词 qi 在文档 d 中出现的次数
+• |d|     : 文档 d 的长度（词数）
+• avgdl   : 语料库中文档的平均长度
+• N       : 语料库中文档总数
+• n(qi)   : 包含词 qi 的文档数
+• k1      : 词频饱和度参数（通常 1.2~2.0），控制词频的贡献上限
+• b       : 文档长度归一化参数（通常 0.75），控制长度的影响</code></pre>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>BM25 直觉理解</h4>
+                        <div class="flow" style="flex-direction:column; gap:10px;">
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">词频（TF）：一个词在文档中出现次数越多，越相关<br><small>但有上限——出现 100 次不等于出现 10 次的 10 倍重要</small></div>
+                            <div class="flow-arrow">+</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">逆文档频率（IDF）：一个词在所有文档中越常见，越不重要<br><small>"的"出现在所有文档中，IDF ≈ 0；"永和五年"只出现在少数文档中，IDF 很高</small></div>
+                            <div class="flow-arrow">+</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">长度归一化：长文档天然有更多词，需要惩罚<br><small>避免 10000 字文档仅仅因为词多就排第一</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <pre><code>from langchain.retrievers import BM25Retriever, EnsembleRetriever
+from langchain_community.vectorstores import Chroma
+
+# 1. 准备文档
+documents = [
+    "沈令月是当朝嫡公主，性格温婉，深受皇帝宠爱。",
+    "谢初在长林盛宴中拔得头筹，被皇帝封为太傅。",
+    "永和五年，沈令月下嫁谢初，举国同庆。",
+    "长林盛宴是三年一度的文武比试，胜者可获得皇帝赏赐。",
+    "谢初出身寒门，凭借才华一步步晋升至太傅之位。",
+]
+
+# 2. 构建 BM25 检索器
+bm25_retriever = BM25Retriever.from_documents(documents)
+bm25_retriever.k = 5  # 返回 Top-5
+
+# 3. 构建向量检索器
+vectorstore = Chroma.from_documents(documents, embedding_function)
+vector_retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+
+# 4. 构建混合检索器（核心！）
+hybrid_retriever = EnsembleRetriever(
+    retrievers=[bm25_retriever, vector_retriever],
+    weights=[0.5, 0.5]  # BM25 和向量的权重，可调
+)
+
+# 5. 检索
+results = hybrid_retriever.invoke("沈令月在永和五年嫁给了谁？")
+for i, doc in enumerate(results):
+    print(f"[{i+1}] {doc.page_content}")</code></pre>
+                <div class="tips">
+                    <div class="tip"><strong>权重调优</strong>：weights=[0.5, 0.5] 是起点。如果查询多为关键词精确匹配（如代码、产品名），可调高 BM25 权重；如果查询多为自然语言问题，可调高向量权重。</div>
+                    <div class="tip"><strong>EnsembleRetriever 的合并策略</strong>：默认使用 RRF（Reciprocal Rank Fusion），即根据每个检索器返回的排名计算综合分数，而非简单拼接。</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📊 效果对比</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>查询</th><th>BM25 单独</th><th>向量单独</th><th>混合检索</th></tr></thead>
+                    <tbody>
+                        <tr><td>"沈令月的身份"</td><td>✅ 匹配"沈令月"</td><td>✅ 匹配"公主""嫡公主"</td><td>✅ 两者都返回，覆盖最全</td></tr>
+                        <tr><td>"永和五年发生了什么"</td><td>✅ 匹配"永和五年"</td><td>❌ "永和五年"向量区分度低</td><td>✅ BM25 兜底</td></tr>
+                        <tr><td>"谢初的官职"</td><td>❌ "官职"未出现在文档中</td><td>✅ 匹配"太傅"</td><td>✅ 向量兜底</td></tr>
+                        <tr><td>"ISBN 978-7-02-xxxx"</td><td>✅ 精确匹配</td><td>❌ ISBN 向量无意义</td><td>✅ BM25 兜底</td></tr>
+                        <tr><td>"公主最后嫁给了谁"</td><td>❌ "公主""嫁给"可能匹配不到</td><td>✅ 匹配"下嫁""沈令月""谢初"</td><td>✅ 向量兜底</td></tr>
+                    </tbody>
+                </table>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>检索覆盖率提升</h4>
+                        <div class="flow">
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">BM25 单独<br><small>覆盖率 ~60%</small></div>
+                            <div class="flow-arrow">+</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">向量单独<br><small>覆盖率 ~65%</small></div>
+                            <div class="flow-arrow">=</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">混合检索<br><small>覆盖率 ~85%+</small></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🎯 适用场景</h2>
+                <div class="tips">
+                    <div class="tip"><strong>通用知识库</strong> — 用户查询类型多样，既有精确关键词也有自然语言，混合检索是最稳妥的选择</div>
+                    <div class="tip"><strong>企业文档检索</strong> — 文档中既有专业术语（BM25 擅长）也有描述性内容（向量擅长）</div>
+                    <div class="tip"><strong>代码检索</strong> — 函数名、变量名需要精确匹配，代码注释和描述需要语义匹配</div>
+                    <div class="tip"><strong>电商搜索</strong> — 商品型号、品牌名需要精确匹配，用户描述需要语义匹配</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>🏆 最佳实践：混合 → Rerank → 压缩 → 生成</h2>
+                <p>混合检索不是终点，而是 RAG 检索层的最佳起点。完整的检索增强链路：</p>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <h4>完整检索链路</h4>
+                        <div class="flow">
+                            <div class="flow-step">用户问题</div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step" style="background:#fef9e7; border-color:#f9e79f;">混合检索<br><small>BM25 + 向量<br>取并集 Top-20</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step" style="background:#ebf5fb; border-color:#aed6f1;">Rerank<br><small>Cross-Encoder<br>精排 Top-5</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step" style="background:#fdedec; border-color:#f5b7b1;">压缩<br><small>提取关键句<br>去除噪音</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step" style="background:#eafaf1; border-color:#abebc6;">LLM 生成<br><small>基于精选上下文</small></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tips">
+                    <div class="tip"><strong>为什么混合检索后还要 Rerank？</strong>：混合检索的合并策略（如 RRF）是启发式的，不够精确。Rerank 使用 Cross-Encoder 对每个文档-问题对进行精细打分，精度更高。</div>
+                    <div class="tip"><strong>成本权衡</strong>：混合检索增加了一次 BM25 查询（几乎零成本），Rerank 增加了 Cross-Encoder 推理成本。在精度要求高的场景下，这个投入是值得的。</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="07_HyDE检索.html" class="prev">← 上一页</a>
+            <a href="09_上下文压缩.html" class="next">下一页 →</a>
+        </div>
+    </div>
+</body>
+</html>
