@@ -6,3 +6,7 @@ data/*.txt
 !data/sample.txt
 chroma_db/
 .venv/
+models/
+model.onnx
+test_chat.json
+.python-version
