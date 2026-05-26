@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>15 交叉编码器 Rerank — RAG 知识库</title>
+    <link rel="stylesheet" href="common.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="index.html" class="nav-brand">← RAG 知识库</a>
+        <div class="nav-links">
+            <a href="01_RAG基础概念.html">01</a>
+            <a href="02_Embedding与向量化.html">02</a>
+            <a href="03_文档切块.html">03</a>
+            <a href="04_向量数据库.html">04</a>
+            <a href="05_微调vsRAG.html">05</a>
+            <a href="06_多路检索.html">06</a>
+            <a href="07_HyDE检索.html">07</a>
+            <a href="08_混合检索.html">08</a>
+            <a href="09_上下文压缩.html">09</a>
+            <a href="10_RAG评估.html">10</a>
+            <a href="11_对话记忆.html">11</a>
+            <a href="12_RAG路由.html">12</a>
+            <a href="13_Self-RAG.html">13</a>
+            <a href="14_生产部署.html">14</a>
+            <a href="15_交叉编码器Rerank.html" class="active">15</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <span class="page-num">15</span>
+            <h1>交叉编码器 Rerank</h1>
+            <p class="page-desc">用交叉编码器精排检索结果，提升最终答案质量</p>
+        </div>
+
+        <div class="content">
+            <section>
+                <h2>🎯 什么是 Rerank？</h2>
+                <p>Rerank 是对检索结果的<strong>二次排序</strong>。</p>
+                <p>普通检索（双塔模型）速度快但精度有限。Rerank 用更精准的模型对候选文档重新排序，选出最相关的 Top K。</p>
+            </section>
+
+            <section>
+                <h2>🏗️ 双塔 vs 交叉编码器</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>双塔（Embedding）</th><th>交叉编码器（Rerank）</th></tr></thead>
+                    <tbody>
+                        <tr><td>输入</td><td>问题和文档分别编码</td><td>问题和文档一起输入</td></tr>
+                        <tr><td>交互</td><td>独立编码，算余弦相似度</td><td>Cross-Attention 深度交互</td></tr>
+                        <tr><td>速度</td><td>快（可预计算）</td><td>慢（每次都要算）</td></tr>
+                        <tr><td>精度</td><td>一般</td><td>高</td></tr>
+                        <tr><td>用途</td><td>大规模初筛（100万→20）</td><td>小规模精排（20→3）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>🔄 完整流程</h2>
+                <div class="diagram">
+                    <div class="diagram-box">
+                        <div class="flow">
+                            <div class="flow-step">用户问题</div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">Embedding 粗筛<br><small>Top 20</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">交叉编码器 Rerank<br><small>Top 3</small></div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">LLM 生成</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>📊 LLM Rerank vs 交叉编码器 Rerank</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>维度</th><th>LLM Rerank</th><th>交叉编码器 Rerank</th></tr></thead>
+                    <tbody>
+                        <tr><td>模型</td><td>GPT/Claude 等大模型</td><td>专用小模型（bge-reranker）</td></tr>
+                        <tr><td>速度</td><td>慢（N 个文档 = N 次 API）</td><td>快（1 次推理）</td></tr>
+                        <tr><td>精度</td><td>中</td><td>高</td></tr>
+                        <tr><td>成本</td><td>高（按 token 计费）</td><td>低（本地运行）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>💻 实现代码</h2>
+                <pre><code>from sentence_transformers import CrossEncoder
+
+# 加载交叉编码器模型
+reranker = CrossEncoder('BAAI/bge-reranker-v2-m3')
+
+# 组成 (question, doc) 对
+pairs = [
+    ("沈令月的驸马是谁？", "沈令月选谢初为驸马"),
+    ("沈令月的驸马是谁？", "今天天气很好"),
+    ("沈令月的驸马是谁？", "谢初是昭武将军"),
+]
+
+# 一次性推理，得到所有分数
+scores = reranker.predict(pairs)
+# scores = [0.95, 0.02, 0.78]
+
+# 按分数排序
+ranked = sorted(zip(pairs, scores), key=lambda x: x[1], reverse=True)</code></pre>
+            </section>
+
+            <section>
+                <h2>📦 常见 Rerank 模型</h2>
+                <table class="comparison-table">
+                    <thead><tr><th>模型</th><th>语言</th><th>特点</th></tr></thead>
+                    <tbody>
+                        <tr><td>BAAI/bge-reranker-v2-m3</td><td>多语言</td><td>中文效果好，开源（推荐）</td></tr>
+                        <tr><td>BAAI/bge-reranker-large</td><td>多语言</td><td>更大，更准，更慢</td></tr>
+                        <tr><td>Cohere Rerank</td><td>多语言</td><td>商业 API，效果好</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>💡 实际经验</h2>
+                <div class="tips">
+                    <div class="tip"><strong>粗筛用双塔，精排用交叉编码器</strong> — 先用 Embedding 快速筛出 20 个候选，再用交叉编码器精排选出 3 个</div>
+                    <div class="tip"><strong>候选数量很重要</strong> — 粗筛太少（< 10）可能漏掉相关文档，太多（> 50）会增加 Rerank 时间</div>
+                    <div class="tip"><strong>降级方案</strong> — 如果无法下载交叉编码器模型，可以用 LLM 打分作为替代</div>
+                </div>
+            </section>
+        </div>
+
+        <div class="page-nav">
+            <a href="14_生产部署.html" class="prev">← 上一页</a>
+            <span class="next" style="color:#bdc3c7;">已是最后一页</span>
+        </div>
+    </div>
+</body>
+</html>

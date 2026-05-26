@@ -11,11 +11,9 @@
         .header h1 { font-size: 28px; margin-bottom: 8px; }
         .header p { font-size: 14px; opacity: 0.85; }
         .container { max-width: 1000px; margin: 0 auto; padding: 30px 20px; }
-
         .section { margin-bottom: 40px; }
         .section-title { font-size: 18px; font-weight: 600; color: #2c3e50; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #3498db; display: flex; align-items: center; gap: 8px; }
         .section-title .badge { background: #3498db; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: normal; }
-
         .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
         .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; transition: all 0.2s; border: 1px solid transparent; text-decoration: none; color: inherit; display: block; }
         .card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); border-color: #3498db; }
@@ -26,7 +24,6 @@
         .card-tag { font-size: 11px; padding: 2px 8px; background: #ecf0f1; border-radius: 10px; color: #555; }
         .card-tag.core { background: #ebf5fb; color: #2980b9; }
         .card-tag.adv { background: #fef9e7; color: #d68910; }
-
         .section.practice .card-tag { background: #eafaf1; color: #1e8449; }
     </style>
 </head>
@@ -35,123 +32,45 @@
         <h1>RAG 知识库</h1>
         <p>检索增强生成（Retrieval-Augmented Generation）完整学习路径</p>
     </div>
-
     <div class="container">
         <!-- 基础篇 -->
         <div class="section">
             <div class="section-title">📚 基础篇 <span class="badge">5 篇</span></div>
             <div class="cards">
-                <a href="01_RAG基础概念.html" class="card">
-                    <div class="card-num">01</div>
-                    <div class="card-title">RAG 基础概念</div>
-                    <div class="card-desc">什么是 RAG、完整流程、核心组件、适用场景</div>
-                    <div class="card-tags"><span class="card-tag core">核心概念</span></div>
-                </a>
-                <a href="02_Embedding与向量化.html" class="card">
-                    <div class="card-num">02</div>
-                    <div class="card-title">Embedding 与向量化</div>
-                    <div class="card-desc">文本转向量、双塔架构、相似度计算、ONNX 本地运行</div>
-                    <div class="card-tags"><span class="card-tag core">核心概念</span></div>
-                </a>
-                <a href="03_文档切块.html" class="card">
-                    <div class="card-num">03</div>
-                    <div class="card-title">文档切块</div>
-                    <div class="card-desc">切块策略、块大小选择、重叠的重要性</div>
-                    <div class="card-tags"><span class="card-tag core">核心概念</span></div>
-                </a>
-                <a href="04_向量数据库.html" class="card">
-                    <div class="card-num">04</div>
-                    <div class="card-title">向量数据库</div>
-                    <div class="card-desc">Chroma、HNSW 索引、ANN 搜索、性能调优</div>
-                    <div class="card-tags"><span class="card-tag core">核心概念</span></div>
-                </a>
-                <a href="05_微调vsRAG.html" class="card">
-                    <div class="card-num">05</div>
-                    <div class="card-title">微调 vs RAG</div>
-                    <div class="card-desc">两种方案的区别、适用场景、LoRA 轻量级微调</div>
-                    <div class="card-tags"><span class="card-tag core">核心概念</span></div>
-                </a>
+                <a href="01_RAG基础概念.html" class="card"><div class="card-num">01</div><div class="card-title">RAG 基础概念</div><div class="card-desc">什么是 RAG、完整流程、核心组件</div><div class="card-tags"><span class="card-tag core">核心概念</span></div></a>
+                <a href="02_Embedding与向量化.html" class="card"><div class="card-num">02</div><div class="card-title">Embedding 与向量化</div><div class="card-desc">文本转向量、双塔架构、相似度计算</div><div class="card-tags"><span class="card-tag core">核心概念</span></div></a>
+                <a href="03_文档切块.html" class="card"><div class="card-num">03</div><div class="card-title">文档切块</div><div class="card-desc">切块策略、块大小、重叠的重要性</div><div class="card-tags"><span class="card-tag core">核心概念</span></div></a>
+                <a href="04_向量数据库.html" class="card"><div class="card-num">04</div><div class="card-title">向量数据库</div><div class="card-desc">Chroma、HNSW 索引、ANN 搜索</div><div class="card-tags"><span class="card-tag core">核心概念</span></div></a>
+                <a href="05_微调vsRAG.html" class="card"><div class="card-num">05</div><div class="card-title">微调 vs RAG</div><div class="card-desc">两种方案的区别、适用场景、LoRA</div><div class="card-tags"><span class="card-tag core">核心概念</span></div></a>
             </div>
         </div>
-
         <!-- 进阶篇 -->
         <div class="section">
             <div class="section-title">🚀 进阶篇 <span class="badge">7 篇</span></div>
             <div class="cards">
-                <a href="06_多路检索.html" class="card">
-                    <div class="card-num">06</div>
-                    <div class="card-title">多路检索</div>
-                    <div class="card-desc">Query 改写、多 query 检索、合并去重</div>
-                    <div class="card-tags"><span class="card-tag adv">检索优化</span></div>
-                </a>
-                <a href="07_HyDE检索.html" class="card">
-                    <div class="card-num">07</div>
-                    <div class="card-title">HyDE 检索</div>
-                    <div class="card-desc">用"假答案"提升检索精度、减少语义鸿沟</div>
-                    <div class="card-tags"><span class="card-tag adv">检索优化</span></div>
-                </a>
-                <a href="08_混合检索.html" class="card">
-                    <div class="card-num">08</div>
-                    <div class="card-title">混合检索</div>
-                    <div class="card-desc">BM25 关键词 + 向量语义、取并集、加权排序</div>
-                    <div class="card-tags"><span class="card-tag adv">检索优化</span></div>
-                </a>
-                <a href="09_上下文压缩.html" class="card">
-                    <div class="card-num">09</div>
-                    <div class="card-title">上下文压缩</div>
-                    <div class="card-desc">分数过滤 + LLM 精选、减少噪音</div>
-                    <div class="card-tags"><span class="card-tag adv">上下文优化</span></div>
-                </a>
-                <a href="10_RAG评估.html" class="card">
-                    <div class="card-num">10</div>
-                    <div class="card-title">RAG 评估</div>
-                    <div class="card-desc">检索相关性、答案忠实度、相关性、完整性</div>
-                    <div class="card-tags"><span class="card-tag adv">质量评估</span></div>
-                </a>
-                <a href="11_对话记忆.html" class="card">
-                    <div class="card-num">11</div>
-                    <div class="card-title">对话记忆</div>
-                    <div class="card-desc">滑动窗口 + 摘要压缩 + 实体追踪 + 指代消解</div>
-                    <div class="card-tags"><span class="card-tag adv">对话管理</span></div>
-                </a>
-                <a href="12_RAG路由.html" class="card">
-                    <div class="card-num">12</div>
-                    <div class="card-title">RAG 路由</div>
-                    <div class="card-desc">根据问题类型自动选择最优检索策略</div>
-                    <div class="card-tags"><span class="card-tag adv">智能路由</span></div>
-                </a>
+                <a href="06_多路检索.html" class="card"><div class="card-num">06</div><div class="card-title">多路检索</div><div class="card-desc">Query 改写、多 query 检索、合并去重</div><div class="card-tags"><span class="card-tag adv">检索优化</span></div></a>
+                <a href="07_HyDE检索.html" class="card"><div class="card-num">07</div><div class="card-title">HyDE 检索</div><div class="card-desc">用"假答案"提升检索精度</div><div class="card-tags"><span class="card-tag adv">检索优化</span></div></a>
+                <a href="08_混合检索.html" class="card"><div class="card-num">08</div><div class="card-title">混合检索</div><div class="card-desc">BM25 + 向量、取并集、加权排序</div><div class="card-tags"><span class="card-tag adv">检索优化</span></div></a>
+                <a href="09_上下文压缩.html" class="card"><div class="card-num">09</div><div class="card-title">上下文压缩</div><div class="card-desc">分数过滤 + LLM 精选、减少噪音</div><div class="card-tags"><span class="card-tag adv">上下文优化</span></div></a>
+                <a href="10_RAG评估.html" class="card"><div class="card-num">10</div><div class="card-title">RAG 评估</div><div class="card-desc">检索相关性、答案忠实度、相关性、完整性</div><div class="card-tags"><span class="card-tag adv">质量评估</span></div></a>
+                <a href="11_对话记忆.html" class="card"><div class="card-num">11</div><div class="card-title">对话记忆</div><div class="card-desc">滑动窗口 + 摘要压缩 + 实体追踪</div><div class="card-tags"><span class="card-tag adv">对话管理</span></div></a>
+                <a href="12_RAG路由.html" class="card"><div class="card-num">12</div><div class="card-title">RAG 路由</div><div class="card-desc">根据问题类型自动选择检索策略</div><div class="card-tags"><span class="card-tag adv">智能路由</span></div></a>
             </div>
         </div>
-
         <!-- 高级篇 -->
         <div class="section">
-            <div class="section-title">🔥 高级篇 <span class="badge">1 篇</span></div>
+            <div class="section-title">🔥 高级篇 <span class="badge">2 篇</span></div>
             <div class="cards">
-                <a href="13_Self-RAG.html" class="card">
-                    <div class="card-num">13</div>
-                    <div class="card-title">Self-RAG</div>
-                    <div class="card-desc">LLM 自我反思：要不要检索、结果够不够、答案对不对</div>
-                    <div class="card-tags"><span class="card-tag adv">自我反思</span></div>
-                </a>
+                <a href="13_Self-RAG.html" class="card"><div class="card-num">13</div><div class="card-title">Self-RAG</div><div class="card-desc">LLM 自我反思：要不要检索、结果够不够</div><div class="card-tags"><span class="card-tag adv">自我反思</span></div></a>
+                <a href="15_交叉编码器Rerank.html" class="card"><div class="card-num">15</div><div class="card-title">交叉编码器 Rerank</div><div class="card-desc">双塔 vs 交叉编码器、Rerank 精排</div><div class="card-tags"><span class="card-tag adv">精排</span></div></a>
             </div>
         </div>
-
         <!-- 实战篇 -->
         <div class="section practice">
             <div class="section-title">🛠️ 实战篇 <span class="badge">2 篇</span></div>
             <div class="cards">
-                <a href="14_生产部署.html" class="card">
-                    <div class="card-num">14</div>
-                    <div class="card-title">生产部署</div>
-                    <div class="card-desc">FastAPI 封装、流式输出、多会话管理、前端页面</div>
-                    <div class="card-tags"><span class="card-tag">部署</span><span class="card-tag">API</span></div>
-                </a>
-                <a href="搭建经验.html" class="card">
-                    <div class="card-num">15</div>
-                    <div class="card-title">搭建经验</div>
-                    <div class="card-desc">踩坑记录、解决方案、技术选型</div>
-                    <div class="card-tags"><span class="card-tag">经验</span></div>
-                </a>
+                <a href="14_生产部署.html" class="card"><div class="card-num">14</div><div class="card-title">生产部署</div><div class="card-desc">FastAPI 封装、流式输出、前端页面</div><div class="card-tags"><span class="card-tag">部署</span><span class="card-tag">API</span></div></a>
+                <a href="../搭建经验.html" class="card"><div class="card-num">📋</div><div class="card-title">搭建经验</div><div class="card-desc">踩坑记录、解决方案、技术选型</div><div class="card-tags"><span class="card-tag">经验</span></div></a>
             </div>
         </div>
     </div>
